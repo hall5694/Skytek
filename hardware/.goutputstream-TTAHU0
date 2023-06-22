@@ -1,0 +1,296 @@
+import serial
+import time
+import multiprocessing
+import inspect
+
+## Change this to match your local settings
+
+
+class Tflow_serial_process(multiprocessing.Process):
+    def __init__(self,q25,q35,qts1,qts2,qts3,qts4,qw29,qw30):
+                     
+        multiprocessing.Process.__init__(self)
+        self.q25 = q25        
+        self.q35 = q35 # Register to read      
+        self.qts1 = qts1 # send kpv file to tflow_serial.py
+        self.qts2 = qts2
+        self.qts3 = qts3
+        self.qts4 = qts4 # write data to Totalflow rs232
+        self.qw29 = qw29 # Totalflow read registers
+        self.qw30 = qw30 # Send web message for tflow_serial.py
+        
+        self.Kpv = []       
+        
+        self.prev_Dict = None
+        self.prev_msg = ""
+        
+        self.poll_fail_count = 0
+        self.poll_fail = 0
+        
+        self.prev_msg = ""
+       
+        self.sltm = 0.001
+     
+    def check_port_status(self):
+        #Determine correct totalflow serial port - Verify ability to read in data
+        self.send_web_message("Checking totalflow rs232 port status",0)
+        if self.poll_fail_count >= self.max_poll_fail:
+            self.poll_fail = 1          
+            self.send_web_message("%s attempts to connect to totalflow rs232 have failed. No more attempts will be made.\
+                         Please verify the connection is working and connected, then restart the program."\
+                         %int(self.max_poll_fail),0)
+        else:
+            try:
+                self.ser = serial.Serial(self.serial_port, self.serial_baudrate, timeout=1, parity=serial.PARITY_NONE, stopbits=2, rtscts=0)
+            except:
+                self.send_web_message("Not able to open serial port to totalflow",2)
+                self.connect_countdown()
+            else:        
+                try:
+                    inw = self.ser.in_waiting
+                except:
+                    self.cprint("problem with in waiting")
+                    self.connect_countdown()
+                else:        
+                    self.send_web_message("Serial port to totalfow opened",0.5)
+                    try:
+                        self.ser.write(b'TERM') #start the data stream
+                    except:
+                        self.connect_countdown()                   
+                        self.send_web_message("Totalflow rs232 not taking commands",2)
+                    else:
+                        self.send_web_message("Totalflow rs232 is taking commands",0.5)
+                        try:
+                            var = self.ser.read(10).decode()#read in 50 bytes from the data stream
+                        except:
+                            self.send_web_message("Not able to decode totalflow rs232 data stream",2)
+                            self.connect_countdown() 
+                            var = "..."                       
+                        else:
+                            if var != "": #non empty string from data stream indicates commands are working
+                                self.port_works = 1
+                                self.send_web_message("rs232 communication to Totalflow successful",1.5)
+                            else:
+                                self.cprint("empty string")
+                                self.connect_countdown()
+                          
+            time.sleep(self.sltm)
+            
+    def connect_countdown(self):
+        Dict = {'dest':'poll_fail'}       
+        self.cdt = 1
+        self.poll_fail_count += 1
+        self.cprint("self.poll_fail_count : %s  self.max_poll_fail : %s"%(self.poll_fail_count,self.max_poll_fail))
+        self.send_web_message("Problem reading in from Totalflow rs232",2)
+        try:
+            self.ser.close()
+        except:
+            self.send_web_message("Not able to close serial port to Totalflow",2) 
+        #self.mq(self.q21, {'purpose':'stop_pid', 'data':'0'})
+        st  = time.time()
+        ct = 5
+        dt = 0
+        tu = 0
+        while tu < 6:
+            dt = time.time() - st
+            if dt > tu:
+                self.send_web_message("Attempt %s/%s to connect to Totalflow rs232 in %s"%(self.poll_fail_count,int(self.max_poll_fail),ct),1)
+                ct -= 1
+                tu += 1
+        self.cdt = 0
+        self.check_port_status()
+
+    def writeSerial(self, data):
+        try:
+            self.ser.write(data.encode())
+            self.ser.write(b'\r')
+            #self.ser.write(str(data))
+        except:
+            self.connect_countdown()
+        else:
+            None                                 
+
+    def send_web_message(self, var, clstime):
+        if clstime != 0:
+            Dict = {'dest':'web_message', 'val':'cls'}
+            self.qw30.put(Dict)
+        Dict = {'dest':'web_message', 'val':var}
+        self.qw30.put(Dict)
+        self.prev_msg = var
+        if clstime != 0:
+            time.sleep(clstime)
+            Dict = {'dest':'web_message', 'val':'cls'}
+            self.qw30.put(Dict)
+        
+    def readSerial(self):
+        try:
+            r_str = self.ser.read(25)
+        except:
+            self.cprint("Problem reading in string from Totalflow rs232")
+            self.connect_countdown()
+            raise
+        else:    
+            try:
+                r_str = r_str.decode()
+            except:
+                self.cprint("Problem with decode Totalflow rs232")
+                self.connect_countdown()
+            else:
+                return r_str
+
+    def check_alarms(self):
+        # check for high sp---------------
+        if float(self.psi_num) > self.sp_high_stpt: # over ranging Totalflow sp
+            if self.sp_alarm_status == 0:
+                self.mq(self.qw3,{'dest':'tflow_sp_high_alarm', 'data':'1'}) # change display color
+                self.sp_alarm_status = 1
+            if self.vent_status == 0: # psi vent is currently closed
+                self.send_web_message("Auto opening the psi vent for high Totalflow SP",0)
+                Dict = {'dest':'q13','purpose':'vent_alarm','data':'1'} # open the psi vent for high SP
+                self.mq(self.q13, Dict)                  
+        elif self.sp_alarm_status == 1: # psi in normal range - reset high sp alarm
+            self.mq(self.qw3,{'dest':'tflow_sp_high_alarm', 'data':'0'}) # change display color
+            self.sp_alarm_status = 0
+            Dict = {'dest':'q13','purpose':'vent_alarm','data':'0'} # reset
+            self.mq(self.q13, Dict)
+        # check for high sp---------------
+        
+        # check sp high enough to need to open equalizer---------------
+        if float(self.psi_num) > self.psi_open_equalizer_stpt:
+            if self.eq_status == 1: # equalizer is currently closed
+                self.send_web_message("Auto opening the equalizer for high Totalflow psi",0)
+                Dict = {'dest':'cntrl','purpose':'eq','data':'0'} # open the equalizer for high psi
+                self.mq(self.q9, Dict)
+        # check sp high enough to need to open equalizer---------------
+        
+        # check for high dp---------------
+        if float(self.in_num) > self.dp_high_stpt: # over ranging Totalflow dp
+            if self.dp_alarm_status == 0:
+                self.cprint("Alarm: High Totalflow DP")
+                self.mq(self.qw3,{'dest':'tflow_dp_high_alarm', 'data':'1'}) # change display color
+                self.dp_alarm_status = 1
+                
+            if self.eq_status == 1: # eq is currently closed
+                self.send_web_message("Auto opening the equalizer for high Totalflow DP",0)
+                Dict = {'dest':'q12','purpose':'eq_alarm','data':'0'} # open the equalizer for high dp
+                self.mq(self.q12, Dict)
+            if self.vent_status == 0: # psi vent is currently closed
+                self.send_web_message("Auto opening the vent for high Totalflow DP",0)
+                Dict = {'dest':'q13','purpose':'vent_alarm','data':'1'} # open the psi vent for high DP
+                self.mq(self.q13, Dict)
+            if self.in_vent_status == 0: # inch vent is currently closed
+                self.send_web_message("Auto opening the in vent for high Totalflow DP",0)
+                Dict = {'dest':'q14','purpose':'in_vent_alarm','data':'1'} # open the inch vent for high DP
+                self.mq(self.q14, Dict)                 
+        elif self.dp_alarm_status == 1: # dp in normal range - reset high Totalflow dp alarm
+            Dict = {'dest':'q14','purpose':'in_vent_alarm','data':'0'} # reset
+            self.mq(self.q14, Dict)
+            Dict = {'dest':'q13','purpose':'vent_alarm','data':'0'} # reset
+            self.mq(self.q13, Dict)
+            self.mq(self.qw3,{'dest':'tflow_dp_high_alarm', 'data':'0'}) # change display color                  
+            self.dp_alarm_status = 0
+        # check for high dp---------------    
+        
+    def cprint(self, msg = ""):
+        if msg != self.prev_msg:
+            print("%s  (ts%s)  %s"%(msg,inspect.currentframe().f_back.f_lineno, time.time()))
+            self.prev_msg = msg
+               
+    def mq(self, q, val, block = False, timeout = 0.05): # verify queue transmission
+        if block == 1:
+            block = True
+        try:
+            self.q = q
+            try:
+                while self.q.full():
+                    self.q.get(block, timeout)
+            except:
+                None
+            else:
+                try:
+                    self.q.put(val, block, timeout)         
+                except:
+                    None
+        except:
+            None
+ 
+    def init_kpv_to_val(self):
+        self.max_poll_fail = int(self.Kpv[230]) # 10
+        self.serial_port = '/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller-if00-port0'
+        self.serial_baudrate = self.Kpv[231] #2400                
+                                             
+    def mod_kpv_entry(self, index, val):
+        self.Kpv[index] = val # update local process kpv entry
+        Dict = {'row':index,'val':val}
+        self.mq(self.q25, Dict) # send new values to cntrl.py
+             
+    def run(self):
+        self.cdt = 0
+        self.cprint("tflow_serial.py running")
+        while self.qts1.empty():
+            time.sleep(1)
+        self.Kpv = self.qts1.get()
+        while len(self.Kpv) == 0:
+            None          
+        self.init_kpv_to_val()   
+        self.cprint("tflow_serial.py kpv imported successfully")                                
+        inw = 0
+        try:
+            self.ser = serial.Serial(self.serial_port, self.serial_baudrate, timeout=1, parity=serial.PARITY_NONE, stopbits = 2, rtscts=0)
+        except:
+            self.send_web_message("Initial attempt to connect to totalflow rs232 failed", 3)
+            self.connect_countdown()        
+        else:
+            self.cprint("Initial attempt to connect to totalflow rs232 successful")
+        try:
+            self.ser.reset_input_buffer()
+        except:
+            self.send_web_message("Initial connect to totalflow rs232 failed",2)
+            self.cprint("Unable to clear Totalflow rs232 input buffer")
+            self.connect_countdown()
+        else:
+            self.cprint("Totalflow reset_input_buffer successful")
+            stlt = time.time()
+            time.sleep(2) # allow time to boot ( may not be necessary )
+            while True:   
+                if not self.qts2.empty():
+                    data = self.qts2.get()                
+                if not self.qts3.empty():
+                    data = self.qts3.get()                              
+                if not self.qts1.empty(): # get updated kpv from cntrl.py
+                    self.Kpv = self.qts1.get()
+                    while len(self.Kpv) == 0: # wait for kpv to populate
+                        None
+                    self.init_kpv_to_val() # set local process kpv values                                                                   
+                # get data from Totalflow rs232
+                if self.poll_fail == 0 and self.cdt == 0:
+                    try:
+                        inw = self.ser.in_waiting
+                    except:
+                        self.cprint("problem at in waiting")
+                        self.connect_countdown()
+                    else:
+                        if (inw > 0 and self.poll_fail == 0 and self.cdt == 0):
+                            self.cprint("Attempting to read Totalflow rs232")
+                            data = self.readSerial()
+                            if data != None:
+                                self.cprint(str(data))
+                                None
+                        elif inw < 1:
+                            None
+                            #self.cprint("Totalflow rs232 buffer in_waiting is empty")
+                            #self.connect_countdown()
+                        elif self.poll_fail != 0:
+                            self.cprint("Totalflow rs232 poll fail")
+                        elif self.cdt != 0:
+                            self.cprint("re-connect to Totalflow rs232 countdown timer running")
+                        if not self.qts4.empty():
+                            data = self.qts4.get()
+                if not self.q35.empty():
+                    data = self.q35.get()
+                    self.cprint("Write register command issued")                                
+                    reg = data['data']
+                    self.cprint("Writing : %s"%reg)
+                    self.writeSerial(data['data'])                              
+                time.sleep(0.1)
+

@@ -1,0 +1,181 @@
+$(document).ready(function(){
+  kpv_wmod=[]
+  kpv_val = []
+  init = 0
+  //var socket = new WebSocket("ws://192.168.88.90:8080/ws");
+  var socket = new WebSocket("ws://192.168.42.1:10122/ws");
+  //var socket = new WebSocket("ws://192.168.43.90:8080/ws");
+
+  socket.onopen = function(){
+    console.log("connected");
+    vr = draw_axis();
+    x = 0;
+    y = 0;
+    p_x = 0;
+    p_y = 0;
+    min_ma_record = 5;
+    prev_coords = [0,0];
+    hist = [];
+    //console.log(vr)
+    //sendMessage({ 'dest':'qk1', 'purpose':'request_kpv', 'data' : '1'});    
+  };
+
+  // message received from the socket
+  socket.onmessage = function (message) {
+    //console.log("receiving: " + message.data);    
+    if (JSON.parse(message.data).dest == 'web_graph_adj_ma'){
+      dt = JSON.parse(message.data).dt;
+      adj_ma = JSON.parse(message.data).adj_ma;
+      adj_ST_up_avg = JSON.parse(message.data).adj_ST_up_avg;
+      adj_ST_down_avg = JSON.parse(message.data).adj_ST_down_avg;
+      adj_LT_up_avg = JSON.parse(message.data).adj_LT_up_avg;
+      adj_LT_down_avg = JSON.parse(message.data).adj_LT_down_avg;      
+      prev_coords = adj_data(vr, dt, p_x, p_y, adj_ma, adj_ST_up_avg, adj_ST_down_avg);     
+      p_x = prev_coords[0]
+      p_y = prev_coords[1]
+    }; // socket.onmessage
+   };
+     
+  socket.onclose = function(){
+    console.log("disconnected");
+  };
+
+  var draw_axis = function(){
+    vr = [];
+    w = 500; // canvas width
+    h = 250; // canvas height
+    aw = 30; // axis width
+    xo = aw; // origin x coordinate
+    yo = h - aw; // origin y coordinate
+    ys = 2500; // y scale
+    xs = 4; // x scale
+    dedm = 0; // deduct seconds to redraw graph
+    ded = xs;
+    cded = ded * dedm;
+    xti = 50; // number of tick marks on x axis
+    xid = xs / xti; // x index divisions
+    xtid = (w - aw) / xti; // distance between tick marks on x axis
+    yti = 25; // number of tick marks on y axis
+    yid = ys / yti; // y index divisions
+    ytid = (h - aw) / yti; // distance between tick marks on y axis
+    td = 0.1 * aw; // tick mark length
+    vr = [w,h,aw,xo,yo, xs, ys];
+    
+    let canvas = document.querySelector("canvas");
+    let cx = canvas.getContext("2d");
+    cx.fillStyle = "white";
+    cx.fillRect(0, 0, 500, 250);
+    cx.beginPath();
+    // axis
+    cx.moveTo(aw, 0);
+    cx.lineTo(aw, 250);
+    cx.moveTo(0, h-aw);
+    cx.lineTo(w, h-aw);
+    
+    // x ticks - left to right
+    xi = xid; // beginning y index marker
+    sx = xo + xtid
+    sy = yo
+    cx.textAlign="center";
+    cx.textBaseline="middle";
+    for (let i = 0; i<xti; i++){
+      ctd = td // current tick length
+      if (i % 2 == 0) {
+        ctd = td * 1.2
+      }
+      if (i % 3 == 0) {
+        ctd = td * 1.4
+      }
+      if (i % 4 == 0) {
+        ctd = td * 1.8
+        cx.strokeText(xi.toFixed(1), sx, sy + aw / 2);        
+      }      
+      cx.moveTo(sx, sy);  
+      cx.lineTo(sx, sy + ctd);
+      //cx.fillText(xi, sx, sy + aw / 2);
+      xi += xid;
+      sx += xtid;
+    }
+    
+    
+    // y ticks - bottom to top
+    yi = yid; // beginning y index marker
+    sx = xo
+    sy = yo - ytid
+    cx.textAlign="right";
+    cx.textBaseline="middle";
+    for (let i = 0; i<xti; i++){
+      ctd = td // current tick length
+      if (i % 2 == 0) {
+        ctd = td * 1.2
+      }
+      if (i % 3 == 0) {
+        ctd = td * 1.4
+      }
+      if (i % 4 == 0) {
+        ctd = td * 1.8
+        cx.strokeText(Math.floor(yi), aw - 5, sy);        
+      }      
+      cx.moveTo(sx, sy);  
+      cx.lineTo(sx - ctd, sy);
+      yi += yid;
+      sy -= ytid
+    }
+        
+    cx.stroke();
+    cx.strokeStyle="blue";
+    return vr
+  }
+  
+  var adj_data = function(vr, dt, p_x, p_y, adj_ma, adj_ST_up_avg, adj_ST_down_avg){
+   //console.log(dt, adj_ma, adj_ST_up_avg, adj_ST_down_avg)
+   //console.log(vr)
+    let canvas = document.querySelector("canvas");
+    let cx = canvas.getContext("2d");
+    vr = [w,h,aw,xo,yo,xs,ys];
+    w = vr[0];
+    h = vr[1];
+    aw = vr[2];
+    xo = vr[3];
+    yo = vr[4];  
+    xs = vr[5];
+    ys = vr[6]; 
+    p_x = p_x
+    p_y = p_y
+    num = (dt - dt % xs) / xs;
+    cded_prev = cded
+    cded = xs * num;    
+    gdt = dt - cded;    
+    y = adj_ma;
+    x = ((w-aw) * (gdt/xs)) + aw
+    y = (h-aw) - ((h-aw) * (adj_ma/ys))
+    
+    if (cded != cded_prev) {
+      cx.fillStyle = "white";
+      cx.fillRect(aw + 1, 0, w, h - aw - 1);
+    }
+    
+    cx.fillstyle = "blue"
+    cx.beginPath();
+    if (p_x > aw){
+      cx.moveTo(p_x, p_y);
+    }
+    if (adj_ma > min_ma_record){
+      if (p_x < x && x > aw){
+        cx.lineTo(x, y);
+      }
+      p_x = x
+      p_y = y
+      cx.stroke();     
+      prev_coords = [x,y]
+    }
+    hist.push(prev_coords)
+    return prev_coords
+  }   
+   
+  // send a message to the server
+  var sendMessage = function(message) {
+    //console.log("sending:" + message.data);
+    socket.send(JSON.stringify(message));
+  }; 
+});

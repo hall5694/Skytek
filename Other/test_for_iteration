@@ -1,0 +1,16 @@
+#!/usr/bin/python3
+import sys
+import time
+import threading
+import queue
+import multiprocessing
+import serial
+import time
+import atexit
+from collections import OrderedDict
+
+l = OrderedDict([('5','five'),('4','four'),('3','three'),('2','two'),('1','one')])
+
+for i,j in l.items():
+    print("i:%s   j:%s"%(i,j))
+

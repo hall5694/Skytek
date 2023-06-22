@@ -1,0 +1,254 @@
+120919
+First revision with servo motors for inlet and outlet
+123119 wsc46
+Modified to allow initial update of valve and motor positions as well as barometric pressure
+123119 wsc47
+011520 wsc 53
+  Split up program into relevant folders
+  PSI auto pid ~working - need to tune
+  Added psi setpoint buttons
+  
+wsc34
+  added shortcut icons to most used files
+
+wsc56
+  added current reading and adjuster reset on overcurrent
+  
+wsc60 1-31-20
+  modified serialworker to ignore weird zero problem
+  
+wsc61 2-1-20
+  all values saved to Kpv file
+  save LT derivative values
+  
+wsc62 020320
+  trashed psi pid method based on derivative for simple pid
+  
+wsc63 020420
+  changed all pid variables to basic p,i,d
+  modified inlet solenoid to work in conjunction with pump
+  fixed switch to rough
+  changed derivative to p - pp (was pp - p)
+  
+wsc64 020520
+  current trip based on outlier array average
+  modified auto pid to start in fine mode(s)
+  now passing totalizer to motor amp via queue
+  
+wsc65 020620
+  began working with spinboxes
+  downloaded jquery and linked html
+  
+wsc67 021020
+  began modifying queues for efficency.
+  
+wsc70 021220
+  completed correcting queues
+  began implementing seperate page for settings
+  
+wsc71 021320
+  begin javascript dynamic create of settings page
+  
+wsc72 021420
+  redesigned css for main web-interface to allow 100% zoom factor (same as settings page)
+  all kpv values populating on settings page
+  began working on detecting change in inputs on settings page
+  
+wsc66 021720
+  added ability to get changes from web settings page to program
+  modified css
+
+wsc79 021920
+  pid web display working
+  added box for pw readings
+  implemented fitty for text on main web page
+  
+wsc80 022020
+  Added readout on web for outlier ma
+  simplified css for web settings page
+  began work on graph page
+
+wsc82 022120
+  gave each webpage a different port
+  graph adj ma working 
+  
+wsc83 022220
+  added time.sleep to each major while loop to attempt to solve hanging problem
+  split up queues for web
+  simplified adj ma checking down to ST only
+  
+wsc84 022320
+  modified cntrl.py to have all kpv info modified only in Pid_class
+  modified other py programs to not directly access or modify kpv_file. use queues instead
+   to cntrl.py
+
+wsc89 022520
+  cprint prints line number and file shortname  
+
+wsc90 022520
+  simplified serialworker to speed up readings
+  serialworker clears message display after problems with crystal
+  buttons change color when used automatically
+
+wsc91 022620
+  adjuster nonstop movement monitors current now
+
+wsc93
+  modified all programs to only allow access to kpv file from cntrl.py
+  corrected in and psi display right align
+  modified mq to default to non-blocking and 0.05 sec timeout if set to block - 030320
+  removed inlet_cmd and outlet_cmd - switch to single source of control s0 and s1 in Mc
+  discovered issue with non-empty / full queues (infinitesimal delay problem)
+  
+wsc95 030420
+  added ability to read in pwm duty cycle from adafruit classes in order to detect actual
+   state of motor outputs
+   
+wsc96 030520
+  started working on using start, stop, pause buttons for both inch and psi
+  entering inch or psi field clears the other
+  correct setpoint buttons highlight after use
+  
+wsc97 030620
+  removed pccu count and tflow ip buttons  - auto set when input changes now
+  removed in_aoss nad psi_aoss - consolidated to start, stop, pause button
+    javascript determines whether auto inch or psi
+
+wsc98 030720
+  on focus of element in settings page, that settings won't change
+
+wsc100 031020
+  Kpv order changed for readability
+  adjuster stops on ma trip
+  after consecutive trips inhibits movement in that direction
+  
+wsc102 040820
+  zero inlet and outlet capability from web
+  
+wsc103 051820
+  Send marker sends psi as well
+  
+wsc105 072420
+  began work on heartbeat from web to allow restart of program
+
+wsc106 073020
+  chrome issued update that requires allowing external application every time (send marker)
+  switched use to Microsoft edge to resolve the problem
+  Required jslint on .js code to run
+  Note: In order to stop request to open tc.exe every time it is requested,
+   open IE, attempt to run the script there (send marker) and uncheck box to require
+    every time.
+
+wsc109 090320
+  added usb485 to read in temperature and update to web
+  modified beam sensor section to attempt to stop false re-center
+  added web indicators for beam sensors
+
+wsc113 102820
+  Added resistor to beam sensors to enable fault detection - modified code accordingly
+
+wsc116 111820
+  ROC send markers working by modifiying cmds.ahk to use mouse clicks and lock user input
+  Web display modified to show Tflow temp - baro moved to row 6 column 6
+  Display for readings now shows OvrRng when out of display area  
+
+wsc117
+  Getting data from Totalflow rs232 using serial adapter
+
+wsc118
+  Scrapped Totalflow rs232 comms. Only useful for periodic data (not fast polling
+  Average time between tx and rx is 0.12 sec per register
+  Will be useful for polling specific registers using Totalflow app.array.register format if needed
+  Switching back to ethernet / .mrm files for fast polling Totalflow data until TCI toolkit workaround
+    is complete for Linux
+  Began work to allow strings in settings page
+  Main purpose is to allow maintaining tflow ip address
+  Changed format in kpv file to show data type: eg. {f}  float
+  
+wsc120
+  Color coded buttons on web
+  Started work converting DP over to nitrogen instead of air pump
+  Set up exclusive button groups
+
+wsc121
+  Nitrogen DP working
+  Corrected beam sensor re-center action not working correctly
+  Added seperate kp, ki, kd values for psi / in
+  Changed settings web page back to spinners based on data type
+  Worked on settings page - added buttons for boolean types  
+
+wsc122
+  Settings page generated completely through javascript
+  Hides sections untl enabled
+  Skytek remote access page functioning
+
+wsc124
+  set up authentication through tornado
+  user credentials accessed in database
+  sections on settings page for root user to add user, remove user, and change root user
+  
+wsc125
+  button to see current users
+
+wsc126
+  kpv switched to database
+  resolved issue with beam re-center not working (adj_pos != trip_pos)
+  messages to clients are now specific to client instead of shotgun approach
+
+wsc127
+  auto logout user after inactivity  
+  added dp alarm when in sp mode
+  added clear crystal alarm button
+
+wsc130
+  added auto send 3 markers for 200 SP
+  created database for marker records 'test_records'
+  worked on notification sound when SP is ready - scrapped for now
+
+wsc131
+  send_marker sends temp now as well
+  logging markers in db working
+
+wsc132
+  removed pccu_count stuff
+  added ability to skip points
+  full_test now performs hold commands and checks hold status
+
+wsc133
+  organize init kpv value in order
+  switched to firefox - chromium requires approval for custom url protocol per instance
+  fixed error with init kpv getting wrong data type
+  
+wsc134
+  moved beam sensor code to analog_in.py for more reliable operation
+    avoids problem of missed data from queue
+
+wsc135
+  added awaiting_good_data()
+  added pressure_stabilized()
+
+wsc136
+  began incorporating logging
+  cleaning up pid code ...
+
+wsc137
+  corrected read/write tcp modbus registers
+    set up tflow 16 bit modicon - rcc 32 bit float
+    have to read/write from/to register (100's x 2): e.g.  8008 -> 8016
+
+wsc138
+  discovered issue with read / writing to same port as tcp dpsptp
+
+wsc139
+  Set up new class to seperate port 502 tcp live readings from port 503 tcp read/write
+  added expose ref dp function / solenoid
+  set up status indicator b
+        tv = 'int'
+
+wsc140
+  Added button to lock barometric pressure
+  Added current sensing alarm for beam sensor power
+
+wsc141
+ completed beam sensor center
+ 

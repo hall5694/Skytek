@@ -1,0 +1,235 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <title>Skytek Controls Page</title>    
+    <link rel="stylesheet" type="text/css" href="static/web/controls/controls.css">
+    <link href = "static/web/plugins/jquery/jquery-ui-1.12.1.custom/jquery-ui.css" rel = "stylesheet">
+    <script src = "static/web/plugins/jquery/jquery-ui-1.12.1.custom/external/jquery/jquery.js"></script>
+    <script src = "static/web/plugins/jquery/jquery-ui-1.12.1.custom/jquery-ui.js"></script>  
+    <script src = "static/web/plugins/fitty/fitty/dist/fitty.min.js"></script>    
+    <script type="text/javascript" src="static/web/controls/controls.js"></script>    
+  </head>
+
+  <body>
+    <div class = "vmain">
+      <div class = "flex-main" id="flex-main">
+        <div class = "row_1" id='row1'>
+          <div class = "settings_container">
+            <a href="http://192.168.42.1:10121/static/web/settings/settings.html" target="_blank">
+              <img src="static/web/main/126472.png" class="settings_icon">
+            </a>
+          </div>
+          <div class = "title">Psi</div>
+          <div class = "title">InH2o</div>
+          <div class = "title">Temp</div>
+        </div> <!--row_1-->
+        
+        <div class = "row_2">
+          <div class = "units">Ref</div>
+          <div id="psi_readings" class = "rdg">---</div>
+          <div id="inch_readings" class = "rdg">---</div>
+          <div id = "temp_readings" class = "rdg">---</div>
+        </div> <!--row_2-->
+        
+        <div class = "row_3">
+          <div class = "units">Unit</div>
+          <div id="tflow_psi_readings" class = "rdg">---</div>
+          <div id="tflow_inch_readings" class = "rdg">---</div>
+          <div id="tflow_temp_readings" class = "rdg">---</div>
+                           
+        </div> <!--row_3-->
+        
+        <div class = "row_4">
+          <div class = "column_1">
+            Totalflow IP:
+          </div>
+          <div class = "column_2">
+            <form id = "tflow_ip_input">
+              <input type="text" id="tflow_ip_address" class="input_c2">
+            </form>
+          </div>
+          <div class = "column_3">Inlet:</div>
+          <div id="inlet_display" class = "column_4"></div>    
+          <div class = "column_5">Adjuster position:</div>
+          <div id="adj_pos_display" class = "column_6">---</div>     
+        </div> <!--row_4-->
+        
+        <div class = "row_5">
+          <div class = "column_1">
+            Inch Setpoint:
+          </div>
+          <div class = "column_2">
+            <form id="inch_stpt_form">
+              <input type="text" id="inch_stpt" class="input_c2">
+            </form>
+          </div>
+          <div class = "column_3">Outlet</div>
+          <div id="outlet_display" class = "column_4"></div>  
+          <div class = "column_5">Adjuster mA (up/dn)</div>  
+          <div id="adj_ST_avg_display" class = "column_6">---</div>  
+        </div> <!--row_5-->
+        
+        <div class = "row_6">
+          <div class = "column_1">
+            PSI Setpoint:
+          </div>
+          <div class = "column_2">
+            <form id="psi_stpt_form">
+              <input type="text" id="psi_stpt" class="input_c2">
+            </form>
+          </div>
+          <div class = "column_3"></div>  
+          <div class = "column_4">
+            <form>
+              <input type="text" id="pccu_count" class="input_c6">
+            </form>
+          </div>             
+          <div class = "column_5">Barometric</div>         
+          <div id="baro_readings" class = "column_6">---</div>                             
+          
+        </div> <!--row_6-->
+        
+        <div class = "row_7">
+          <div id="message_box" class = "message"></div>
+          <div id="beam_indicator" class = "beam_table">
+            <div id="beam_r0" class = "beam_row">
+              <div id="beam_r0c0" class = "beam_col">
+                <span id="beam_inner" class="beam_circle"></span>
+              </div>
+            </div> <!--beam_r0-->          
+            <div id="beam_r1" class = "beam_row">
+              <div id="beam_r1c0" class = "beam_col">
+                <span id="beam_outer" class="beam_circle"></span>
+              </div>
+            </div> <!--beam_r1-->                      
+          </div> <!--beam_table--> 
+          <div id="pid_table" class = "pid_table">
+            <div id="pid_r0" class = "pid_row">
+              <div id="pid_r0c0" class = "pid_row_title"></div>
+              <div id="pid_r0c1" class = "pid_col">P</div>
+              <div id="pid_r0c2" class = "pid_col">I</div>
+              <div id="pid_r0c3" class = "pid_col">D</div>
+            </div> <!--pid_r0-->
+            <div id="pid_r1" class = "pid_row">
+              <div id="pid_r1c0" class = "pid_row_title">V</div>
+              <div id="pid_r1c1" class = "pid_col"></div>
+              <div id="pid_r1c2" class = "pid_col"></div>
+              <div id="pid_r1c3" class = "pid_col"></div>
+            </div> <!--pid_r1-->
+            <div id="pid_r2" class = "pid_row">
+              <div id="pid_r2c0" class = "pid_row_title">K</div>
+              <div id="pid_r2c1" class = "pid_col"></div>
+              <div id="pid_r2c2" class = "pid_col"></div>
+              <div id="pid_r2c3" class = "pid_col"></div>              
+            </div> <!--pid_r2-->
+            <div id="pid_r3" class = "pid_row">
+              <div id="pid_r3c0" class = "pid_row_title">R</div>
+              <div id="pid_r3c1" class = "pid_col"></div>
+              <div id="pid_r3c2" class = "pid_col"></div>
+              <div id="pid_r3c3" class = "pid_col"></div>
+            </div> <!--pid_r3-->
+            <div id="pid_r4" class = "pid_row">
+              <div id="pid_r4c0" class = "pid_row_title">PID</div>
+              <div id="pid_r4c1" class = "pid_col"></div>
+              <div id="pid_r4c2" class = "pid_col_title">PW</div>
+              <div id="pid_r4c3" class = "pid_col"></div>
+            </div> <!--pid_r4-->             
+          </div> <!--pid_table--> 
+        </div> <!--row_7-->
+        
+        <div class = "row_8">
+          <div class="button_row" id="b_row_1">
+            <div class ="buttn"><button id="zero2" disabled>Zero PSI</button></div>
+            <div class ="buttn"><button id="zero1" disabled>Zero "H2O</button></div>            
+            <div class ="buttn"><button id="pid_start" disabled>Start</button></div>
+            <div class ="buttn"><button id="pid_stop">Stop</button></div>
+            <div class ="buttn"><button id="pid_pause" disabled>Pause</button></div>
+            <div class ="buttn"><button id="auto_0" disabled>0</button></div>
+            <div class ="buttn"><button id="auto_25" disabled>25</button></div>
+          </div> <!--b_row_1-->
+          
+          <div class="button_row" id="b_row_2">
+            <div class ="buttn"><button id="auto_50" disabled>50</button></div>
+            <div class ="buttn"><button id="auto_62_5" disabled>62.5</button></div>
+            <div class ="buttn"><button id="auto_75" disabled>75</button></div>
+            <div class ="buttn"><button id="auto_100" disabled>100</button></div>
+            <div class ="buttn"><button id="auto_125" disabled>125</button></div>
+            <div class ="buttn"><button id="auto_187_5" disabled>187.5</button></div>
+            <div class ="buttn"><button id="auto_250" disabled>250</button></div>
+          </div> <!--b_row_2-->
+        
+          <div class="button_row" id="b_row_3">
+	          <div class ="buttn"><button id="auto_psi_100" disabled>PSI 100</button></div>
+            <div class ="buttn"><button id="auto_psi_200" disabled>PSI 200</button></div>
+	          <div class ="buttn"><button id="auto_psi_500" disabled>PSI 500</button></div>
+            <div class ="buttn"><button id="auto_psi_650" disabled>PSI 650</button></div>                      
+	          <div class ="buttn"><button id="auto_psi_1000" disabled>PSI 1000</button></div>
+	          <div class ="buttn"><button id="auto_psi_1300" disabled>PSI 1300</button></div>
+            <div class ="buttn"><button class="button_hidden" disabled></button></div>   
+            <!--<div class ="buttn"><button id="ROC">ROC</button></div>-->
+          </div> <!--b_row_3-->
+        
+          <div class="button_row" id="b_row_4">
+            <div class ="buttn"><button id="mk5_250" disabled>250 - 5 Points</button></div>
+            <div class ="buttn"><button id="mk5_100" disabled>100 - 5 Points</button></div>        
+            <div class ="buttn"><button id="next_point" disabled>Next point</button></div>        
+	          <div class ="buttn"><button id="prev_point" disabled>Previous point</button></div>        
+            <div class ="buttn"><button id="send_marker_btn" disabled>Send marker</button></div>                         
+	          <div class ="buttn"><button id="zero_inlet">Zero Inlet</button></div>                
+	          <div class ="buttn"><button id="zero_outlet">Zero Outlet</button></div>            
+          </div> <!--b_row_4-->
+        
+          <div class="button_row" id="b_row_5">
+            <div class ="buttn"><button id="inlet_bump_up">Bump Inlet Open</button></div>
+            <div class ="buttn"><button id="inlet_bump_down">Bump Inlet Close</button></div>
+            <div class ="buttn"><button id="outlet_bump_up">Bump Outlet Open</button></div>
+            <div class ="buttn"><button id="outlet_bump_down">Bump Outlet Close</button></div>
+            <div class ="buttn"><button id="close_inlet_outlet">Close Inlet/Outlet</button></div>                    
+            <div class ="buttn"><button id="init_inlet">Initialize Inlet</button></div>
+            <div class ="buttn"><button id="rest_mtr">Rest outputs</button></div>                        
+          </div> <!--b_row_5-->
+        
+          <div class="button_row" id="b_row_6">            
+            <!--<div class ="buttn"><button id="coarse_up">coarse up</button></div>-->
+            <!--<div class ="buttn"><button id="coarse_down">coarse down</button></div>-->
+            <div class ="buttn"><button class="button_hidden" disabled></button></div>                   
+            <div class ="buttn"><button class="button_hidden" disabled></button></div>                   
+            <div class ="buttn"><button id="fine_up">fine up</button></div>
+            <div class ="buttn"><button id="fine_down">fine down</button></div>
+            <div class ="buttn"><button id="adj_up">Adjuster up</button></div>
+            <div class ="buttn"><button id="adj_down">Adjuster down</button></div>
+            <div class ="buttn"><button id="adj_stop">Adjuster stop</button></div>            
+          </div> <!--b_row_6-->
+        
+          <div class="button_row" id="b_row_7">
+            <div class ="buttn"><button id="mark_adj_zero">Mark Center Zero</button></div>
+            <div class ="buttn"><button id="open_eq">Open Equalizer</button></div>
+            <div class ="buttn"><button id="close_eq">Close Equalizer</button></div>
+            <div class ="buttn"><button id="open_vent">Open Vent</button></div>
+            <div class ="buttn"><button id="close_vent">Close Vent</button></div>
+            <div class ="buttn"><button class="button_hidden" disabled></button></div>                   
+            <div class ="buttn"><button class="button_hidden" disabled></button></div>                   
+          </div> <!--b_row_7-->
+        
+          <div class="button_row" id="b_row_8">
+            <div class ="buttn"><button class="button_hidden" disabled></button></div>
+            <div class ="buttn"><button class="button_hidden" disabled></button></div>
+            <div class ="buttn"><button class="button_hidden" disabled></button></div>
+            <div class ="buttn"><button class="button_hidden" disabled></button></div>
+            <div class ="buttn"><button class="button_hidden" disabled></button></div>                   
+            <div class ="buttn"><button id="tflow_tcp_read">Tflow tcp read</button></div>   
+            <div class ="buttn"><button id="tflow_tcp_write">Tflow tcp write</button></div>            
+            <!--<div class ="buttn"><button id="tflow_hold_on">Totalflow Hold On</button></div>-->
+            <!--<div class ="buttn"><button id="tflow_hold_off">Totalflow Hold Off</button></div>-->            
+            <!--<div class ="buttn"><button id="tflow_rs232_read">Tflow rs232 read</button></div>-->   
+            <!--<div class ="buttn"><button id="tflow_tcp_connection">Tflow tcp connection</button></div>-->
+            <!--<div class ="buttn"><button id="restart">Restart Program</button></div>		-->            
+            <!--<div class ="buttn"><button id="cal3_250">Calibrate 250</button></div>-->
+            <!--<div class ="buttn"><button id="cal3_100">Calibrate 100</button></div>-->                        
+            <!--<div class ="buttn"><button id="re_center">Auto center adjuster</button></div>-->            
+          </div> <!--b_row_8-->
+        </div> <!--row_8-->
+	    </div> <!--flex_main-->
+    </div> <!--main-->
+  </body>
+</html>

@@ -1,0 +1,2775 @@
+#!/usr/bin/python3
+import sys, time, threading, queue, multiprocessing, serial, board, busio, adafruit_ina260, \
+       math, inspect, torndb, MySQLdb, json
+from collections import OrderedDict
+import shutil
+
+db = torndb.Connection('localhost','skytek',user='admin',password='5Am5on45!')
+
+getframe_expr = 'sys._getframe({}).f_code.co_name'
+#print(eval(getframe_expr.format(2)))
+
+from adafruit_motorkit import MotorKit
+kit = MotorKit(address = 0x60)
+p_kit = MotorKit(address = 0x61)
+
+from adafruit_servokit import ServoKit
+s_kit = ServoKit(address=0x44,channels=16)
+s_kit.servo[0].set_pulse_width_range(500, 2500)
+s_kit.servo[0].actuation_range = 180
+#s_kit.servo[1].set_pulse_width_range(500, 2500)
+#s_kit.servo[1].actuation_range = 270
+s_kit.servo[3].set_pulse_width_range(500, 2500)
+s_kit.servo[3].actuation_range = 270
+
+class Controls(multiprocessing.Process):
+    def __init__(self,q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, q13, q14, q15, q16, q17, q18,q19, q20, \
+                 q21, q23, q24, q25, q26, q27, q28, q29, q30, q31, q32, q33, q34, q36, q37, q38, q39, qm1, qm2, qm3, qm4, qm5, qm6, \
+                 qm7, qs1, qs2, qs3, qs7, qs8, qs9, qs10, qs11, qw3, qw4, qw8, qw9, qw10, qw11, qw12, qw13, qw14,\
+                 qw15, qw16, qw17, qw18, qw19, qw20, qw21, qw22, qw23, qw24, qw25, qw26, qw27, qw28, qw29, qw30, \
+                 qw31, qw32, qw33, qw34, qw35, qw36, qw37, qw38, qw39, qw40, qk1, qk2, qk3, qk4, qt2, qt3, qt4, qt5, qb1, qb3, qa1, qa2, qa3, \
+                 qu1, qu3, qts1, qv3, qb2, qd1, qd2):
+                     
+        self.kpv_vars_list = [ 'mtr_inrush_time',       'hb_max_time',           'hb_max_restarts',         'adj_max_pos',          \
+                               'num_markers',           'marker_time',           'in_stable_dbnd',          'in_stable_time',       \
+                               'in_full_test_range',    'in_stpt_divisions',     'in_stpt_cal_divisions',   'in_fine_sw_der',       \
+                               'in_switch_soak',        'stable_der_in',         'psi_full_test_range',     'psi_stable_dbnd',      \
+                               'psi_stable_time',       'psi_stpt_divisions',    'psi_stpt_cal_divisions',  'psi_switch_soak',      \
+                               'psi_der_holdoff',       'psi_fine_sw_der',       'psi_switch_stpt_divisor', 'der_cycle_time',       \
+                               'psi_fine_dbnd',         'stable_der_psi',        'in_count_time',           'psi_count_time',       \
+                               'max_rdg_fail',          'unit_type',             'max_cal_attempts',        'dp_tolerance',         \
+                               'sp_tolerance',          'tp_tolerance',          'always_calibrate',        'dp_test_url',          \
+                               'sp_test_url',           'full_test_active',      'max_marker_min',          'meter_reg_hold', \
+                               'meter_reg_bu_tfcold',   'marker_send_method',    'dp_high_stpt',            'sp_high_stpt'\
+                               'sounds_active',         'sound_interval',        'meter_reg_sp_mark',       'meter_reg_dp_mark',    \
+                               'meter_reg_tp_mark',     'meter_reg_sp_cal_zero', 'meter_reg_sp_cal_0',      'meter_reg_sp_cal_50',  \
+                               'meter_reg_sp_cal_100',  'meter_reg_sp_cal_done', 'meter_reg_dp_cal_zero',   'meter_reg_dp_cal_0',   \
+                               'meter_reg_dp_cal_25',   'meter_reg_dp_cal_50',   'meter_reg_dp_cal_75',     'meter_reg_dp_cal_100', \
+                               'meter_reg_dp_cal_done', 'meter_reg_tp_cal_zero', 'meter_reg_tp_cal_done'   ]
+                              
+        self.kpv_index_list = [  18,  21,  22,  24,   \
+                                 131, 132, 133, 134,  \
+                                 135, 136, 137, 141,  \
+                                 143, 144, 145, 150,  \
+                                 151, 152, 153, 154,  \
+                                 155, 159, 160, 162,  \
+                                 163, 164, 188, 189,  \
+                                 193, 246, 249, 251,  \
+                                 252, 253, 254, 255,  \
+                                 256, 257, 258, 262,  \
+                                 263, 270, 196, 197,  \
+                                 271, 272, 273, 274,  \
+                                 275, 276, 277, 278,  \
+                                 279, 280, 281, 282,  \
+                                 283, 284, 285, 286,  \
+                                 287, 288, 289  ]
+
+        self.web_running = 0
+        self.save_st = time.time() # save values every t seconds
+        self.save_dt = 5 # t seconds to save values
+        self.initial_web_update_st = time.time() # check comm to web every t seconds until response is received
+        self.web_dt = 1
+        multiprocessing.Process.__init__(self)
+        self.web_prev_msg = ""
+        self.sounds_active = 0
+                
+        self.q1 = q1
+        self.q2 = q2
+        self.q3 = q3
+        self.q4 = q4
+        self.q5 = q5 # cntrl.py init_outlet
+        self.q6 = q6
+        self.q7 = q7
+        self.q8 = q8
+        self.q9 = q9 # high DP alarm - open equalizer
+        self.q10 = q10
+        self.q11 = q11
+        self.q12 = q12
+        self.q13 = q13 # high sp alarm - open vent
+        self.q14 = q14
+        self.q15 = q15 # web full auto checks
+        self.q16 = q16 # full auto checks
+        self.q17 = q17
+        self.q18 = q18 # web next point
+        self.q19 = q19 # web previous point
+        self.q20 = q20 # temp readings for cntrl.py
+        self.q21 = q21
+        self.q23 = q23
+        self.q24 = q24 # manual control
+        self.q25 = q25 # send kpv from py processes to cntrl.py
+        self.q26 = q26 # rest motors
+        self.q27 = q27 # start button
+        self.q28 = q28 # stop button
+        self.q29 = q29 # pause button
+        self.q30 = q30 # zero inlet
+        self.q31 = q31 # zero outlet
+        self.q32 = q32 # heartbeat
+        self.q33 = q33 # restart program
+        self.q34 = q34 # ROC button
+        self.q36 = q36 # web command to send a marker
+        self.q37 = q37 # full test (SPDPTP auto)
+        self.q38 = q38 # returned data from meter_read_reg
+        self.q39 = q39 # re-center command from analog_in.py
+
+        self.qw3 = qw3 # inlet_display
+        self.qw4 = qw4 # NA
+        self.qw8 = qw8 # pid values for web
+        self.qw9 = qw9 # send markers
+        self.qw10 = qw10 # ping web
+        self.qw11 = qw11 # web_log command
+        self.qw12 = qw12 # web_log contents
+        self.qw13 = qw13 # eq_status
+        self.qw14 = qw14 # outlet_display
+        self.qw15 = qw15 # adj_pos_display
+        self.qw16 = qw16 # stpt_display
+        self.qw17 = qw17 # psi_stpt_display
+        self.qw18 = qw18 # send_cal_low
+        self.qw19 = qw19 # send_cal_high
+        self.qw20 = qw20 # send_cal_mid
+        self.qw21 = qw21 # send_web_message for cntrl.py
+        self.qw22 = qw22 # send_web_message for motor_current.py
+        self.qw23 = qw23 # send_web_message for serialworker.py
+        self.qw24 = qw24 # btn_status
+        self.qw25 = qw25 # pid_running_status
+        self.qw26 = qw26 # NA
+        self.qw27 = qw27 # disable clear crystal alarm button
+        self.qw28 = qw28 # NA
+        self.qw29 = qw29 # NA
+        self.qw30 = qw30 # NA
+        self.qw31 = qw31 # NA
+        self.qw32 = qw32 # NA
+        self.qw33 = qw33 # sounds
+        self.qw34 = qw34 # next/prev button enable/disable
+        self.qw35 = qw35 # send_web_message for analog_in.py
+        self.qw36 = qw36 # NA
+        self.qw37 = qw37 # NA
+        self.qw38 = qw38 # NA
+        self.qw39 = qw39 # NA
+        self.qw40 = qw40 # NA
+
+        self.qt2 = qt2 # write register to tflow tcp
+        self.qt3 = qt3 # read register from tflow tcp
+        self.qt5 = qt5 # tflow read to cntrl.py
+        
+        self.qs1 = qs1
+        self.qs2 = qs2
+        self.qs3 = qs3
+        self.qs7 = qs7
+        self.qs8 = qs8
+        self.qs9 = qs9 # send auto_pid mode to serialworker
+        self.qs10 = qs10 # send kpv file to serialworker.py
+        self.qs11 = qs11 # serial worker dp high during SP testing
+
+        self.qm1 = qm1
+        self.qm2 = qm2
+        self.qm3 = qm3 # motor_current.py re-center active
+        self.qm4 = qm4 # constant ma alarm checking
+        self.qm5 = qm5 # request from motor_current.py for kpv list
+        self.qm6 = qm6 # send kpv list to motor_current.py
+        self.qm7 = qm7 # send kpv list from motor_current.py to cntrl
+
+        self.qk1 = qk1
+        self.qk2 = qk2
+        self.qk3 = qk3 # settings change from settings web page
+        self.qk4 = qk4 #change made to kpv - update web
+
+        self.qt4 = qt4 # send kpv file to baro_data.py
+
+        self.qb1 = qb1 # ??
+        self.qb3 = qb3 # send kpv file to baro_data.py
+        
+        self.qa1 = qa1 # send kpv file to analog_in.py
+        self.qa2 = qa2 # send adjuster position to analog_in.py
+        self.qa3 = qa3  # re-center complete from cntrl.py
+        
+        self.qu1 = qu1 # ??
+        self.qu3 = qu3 # send kpv file to usb485.py        
+        
+        self.qts1 = qts1 # send kpv list to tflow_serial.py
+        
+        self.qv3 = qv3 # kpv for activity.py
+
+        self.qb2 = qb2 # baro psi for cntrl.py
+
+        self.qd1 = qd1 # write to db
+        self.qd2 = qd2 # read from db
+
+        i2c = busio.I2C(board.SCL, board.SDA)
+        self.ina260 = adafruit_ina260.INA260(i2c, 0x40)
+
+        # heartbeat status initialization
+        self.hb = 0
+        self.hb_st = time.time()
+        self.ck_hb_st = time.time()
+        self.hb_restarts = 0
+         
+        # for web update
+        self.initial_web_in_vent_status = 0
+        self.initial_web_eq_status = 0
+        self.initial_web_psi_vent_status = 0
+        self.initial_web_inlet_pos = 0
+        self.initial_web_outlet_pos = 0
+
+        self.TP_actual = None
+        self.DP_actual = None
+        self.SP_actual = 0
+        self.SP_actual_prev = 0
+        self.pid_run = 0
+        self.in_prev_stpt = -1
+        self.psi_prev_stpt = -1
+        self.max_dev = 0
+
+        self.switch_to_fine = 1 # initial condition
+        self.switch_to_rough = 0 # initial condition
+
+        self.inlet_angle = 0
+        self.inlet_prev_dir = 1
+        self.outlet_angle = 0
+        self.outlet_prev_dir = 1
+        self.rdg_fail_count = 0
+
+        self.next_point = 0 # bypass current auto setpoint to go to next point
+        self.prev_point = 0 # bypass current auto setpoint to go to previous point
+
+        self.unit_type = 0 # 0 - Totalflow 1 - ROC
+        self.vent = 0
+        self.pump = 0
+        self.pid_pause = 0
+        self.pid_pause_btn = 0
+        self.full_auto_stpt = 0
+        self.marker_sent = 0
+        self.number_markers_sent = 0
+        self.num_markers = 2
+        self.marker_sent_st = 0 # start timer after marker has been sent
+
+        self.stable = 0  # inch readings stabilized - ready to send marker
+        self.marker_countup = 0
+        self.marker_send_st = time.time()
+        self.stable_st = 0 # start time
+        self.sound_playing = 0 # steady indicator
+        self.sound_st = 0 # sound playing
+        
+        self.meter_DP_actual = 0
+        self.meter_SP_actual = 13.4
+        self.meter_TP_actual = 60
+        
+        self.full_auto_cal = 0 # calibration - calibration mode
+        self.cal_low_sent = 0
+        self.cal_high_sent = 0
+        self.cal_mid_sent = 0
+
+        self.pid_run = 0
+        self.stop_one_shot = 0
+        self.full_auto = 0 # full auto mode walks through markers / calibration automatically
+        self.full_auto_stpt = 0
+        self.marker_sent = 0
+        self.psi_num_markers_sent = 0
+        self.marker_sent_st = 0 # start timer after marker has been sent
+
+        self.psi_stable = 0  # inch readings stabilized - ready to send marker
+
+        self.psi_stable_st = 0 # start time
+        self.baro_psi = 13.4 # default baro psi - realtime baro pressure replaces this as data comes in
+
+        self.psi_cal_low_sent = 0
+        self.psi_cal_high_sent = 0
+        self.psi_cal_mid_sent = 0
+        self.avg_der = 1000
+        self.avg_der_array = []
+        self.avg_der_array_length = 10
+
+        self.avg_der_cycle_count = 0
+        
+        self.prev_msg = ""
+        self.web_prev_msg = ""
+
+        self.prev_msg = ""
+
+        self.meter_data_received = None # indicate good register read
+
+    def recenter_cmd(self, data):
+            if int(data) == 2:
+                if self.Mc.adj_pos > self.Mc.adj_min_move_amp and self.Mc.adjuster_direction > 0:
+                    self.cprint("re-center adjuster down")
+                    self.Mc.s2(self.Mc.s2_down_spd,self.Mc.adjuster_runout)
+                    '''
+                    if self.Mc.s2_down_spd - 0.05 >= self.Mc.s2_down_spd_max:
+                        self.Mc.s2_down_spd = self.Mc.s2_down_spd - 0.05
+                        self.Mc.mod_kpv_file_entry(37, self.Mc.s2_down_spd)
+                        self.cprint("New adjuster down spd : %s"%self.Mc.s2_down_spd)
+                    elif self.Mc.s2_up_spd - 0.05 >= self.Mc.s2_up_spd_min:
+                        self.Mc.s2_up_spd = self.Mc.s2_up_spd - 0.05
+                        self.Mc.mod_kpv_file_entry(36, self.Mc.s2_up_spd)
+                        self.cprint("New adjuster up spd : %s"%self.Mc.s2_up_spd)
+                    else:
+                        self.cprint("Adjuster tuning failed")
+                    '''
+                if self.Mc.adj_pos < -1 * self.Mc.adj_min_move_amp and self.Mc.adjuster_direction < 0:
+                    self.Mc.s2(self.Mc.s2_up_spd,self.Mc.adjuster_runout)
+                    self.cprint("re-center adjuster up")
+                    '''
+                    if self.Mc.s2_up_spd + 0.05 <= self.Mc.s2_up_spd_max:
+                        self.Mc.s2_up_spd = self.Mc.s2_up_spd + 0.05
+                        self.Mc.mod_kpv_file_entry(36, self.Mc.s2_up_spd)
+                        self.cprint("New adjuster up spd : %s"%self.Mc.s2_up_spd)
+                    elif self.Mc.s2_down_spd + 0.05 <= self.Mc.s2_down_spd_min:
+                        self.Mc.s2_down_spd = self.Mc.s2_down_spd + 0.05
+                        self.Mc.mod_kpv_file_entry(37, self.Mc.s2_down_spd)
+                        self.cprint("New adjuster down spd : %s"%self.Mc.s2_down_spd)
+                    else:
+                        self.cprint("Adjuster tuning failed")
+                    '''
+            else:
+                self.cprint("center the adjuster")
+                self.Mc.center_in_adjuster()
+                self.send_web_message("Command to re-center adjuster")
+
+    def send_web_message(self, var):
+        if var != self.web_prev_msg:
+            Dict = {'dest':'web_message', 'val':var}
+            self.qw21.put(Dict)
+            self.web_prev_msg = var
+
+    def web_run(self, data):
+        if int(data) == 1: # initial updates coming in from web
+            self.cprint("WEB RUNNING!")
+            self.web_running = 1
+            self.save_all(0)
+            self.Mc.init_web_valve_states()
+        else:
+            self.web_running = 0
+
+    def eq_alarm(self, data):
+            self.cprint("vent alarm control command received")
+            self.send_web_message("vent alarm control command received")
+            self.pid_run = 0
+            self.pid_run = 0
+            self.Mc.rest_motors()
+            self.Mc.equalizer_ctrl(float(data))
+
+    def vent_alarm(self, data):
+            self.pid_run = 0
+            self.Mc.rest_motors()
+            self.Mc.vent_ctrl(float(data))
+
+    def in_vent_alarm(self,data):
+            self.pid_run = 0
+            self.pid_run = 0
+            self.Mc.rest_motors()
+
+    def full_auto_checks(self, data, mode):
+        #self.Mc.rest_motors() # safety control
+        try:
+            val = float(data)
+        except:
+            self.cprint("Auto value from web did not convert to float")
+            self.pid_start = 0
+            self.full_auto = 0
+            Dict = {'dest':'next_prev_button_enable', 'data':0}
+            self.mq(self.qw34, Dict)              
+            self.Mc.rest_motors()
+        else:
+            if mode == 'i':
+                self.cprint("Commanded inch setpoint = " + str(val))
+                self.Mc.vent_ctrl(1) # vent is open for DP checks
+            elif mode == 'p':
+                self.cprint("Commanded psi setpoint = " + str(val))
+                self.Mc.vent_ctrl(0) # vent is closed for SP checks                
+            if val > -1:
+                self.stable = 0
+                self.number_markers_sent = 0
+                if mode == 'p':
+                    self.marker_countdown = self.psi_count_time
+                elif mode == 'i':
+                    self.marker_countdown = self.in_count_time                    
+                self.full_auto_stpt = val
+                self.full_auto = 1
+                Dict = {'dest':'next_prev_button_enable', 'data':1}
+                self.mq(self.qw34, Dict)  
+                self.pid_run = 1
+                self.auto_pid(val,'test',mode)
+            else: # auto stop button press
+                self.full_auto = 0
+                Dict = {'dest':'next_prev_button_enable', 'data':0}
+                self.mq(self.qw34, Dict)                  
+                self.pid_run = 0
+                #self.Mc.rest_motors()
+                #self.Mc.vent_ctrl(0)
+                self.marker_sent = 0
+
+    def full_auto_cal(self,data, mode):
+        self.Mc.rest_motors() # safety control
+        try:
+            val = float(data)
+        except:
+            self.cprint("Auto value from web did not convert to float")
+            self.pid_start = 0
+            self.full_auto_cal = 0
+            self.Mc.rest_motors()
+        else:
+            if mode == 'p':
+                self.cprint("Commanded inch setpoint = " + str(val))
+            elif mode == 'i':
+                self.cprint("Commanded psi setpoint = " + str(val))
+            if val > -1:
+                self.stable = 0
+                self.full_auto_stpt = val
+                self.full_auto_cal = 1
+                self.pid_run = 1
+                self.auto_pid(val,'test',mode)
+            else: # auto stop button press
+                self.full_auto_cal = 0
+                self.pid_run = 0
+                self.Mc.rest_motors()
+                self.Mc.vent_ctrl(0)
+                self.cal_low_sent = 0
+                self.cal_high_sent = 0
+                self.cal_mid_sent = 0
+                self.marker_sent = 0
+
+    def next_pt(self,data):
+        if int(data) != 0 and self.full_auto == 1:
+            self.send_web_message("Next point command received")
+            self.next_point = int(data)
+            #self.cprint("next_point : %s"%self.next_point)
+
+    def prev_pt(self,data):
+        if int(data) != 0:
+            self.send_web_message("Previous point command received")
+            self.prev_point = int(data)
+
+    def stop_pid(self, data):
+        self.pid_run = 0
+        #self.Mc.rest_motors()
+
+    def get_DP_val(self):
+        if not self.qs7.empty():
+            #self.cprint("new inch value")
+            try:
+                var = float((self.qs7.get())['in_num'])
+            except:
+                self.cprint("Not able to convert inch readings to float.")
+                self.cprint("Poll fail count: %s" %self.rdg_fail_count)
+                self.rdg_fail_count += 1
+            else:
+                if self.rdg_fail_count > 0:
+                    self.rdg_fail_count = 0
+                return var
+        else:
+            return self.DP_actual
+
+    def get_SP_val(self):
+        if not self.qs8.empty():
+            try:
+                var = float((self.qs8.get())['psi_num'])
+            except:
+                self.cprint("Not able to convert psi readings to float")
+            else:
+                return var
+        else:
+            return self.SP_actual
+
+    def get_TP_val(self):
+        if not self.qs8.empty():
+            try:
+                var = float((self.qs8.get())['psi_num'])
+            except:
+                self.cprint("Not able to convert psi readings to float")
+            else:
+                return var
+        else:
+            return self.SP_actual            
+
+    def manual_control(self, data):
+        #self.cprint(data)
+        if data == "fine_up":
+            self.Mc.s2(self.Mc.s2_up_spd, 100)
+
+        if data == "fine_down":
+            self.Mc.s2(self.Mc.s2_down_spd,100)
+
+        if data == "u_fine_up":
+            self.Mc.s2(self.Mc.s2_up_spd / 2, 10)
+
+        if data == "u_fine_down":
+            self.Mc.s2(self.Mc.s2_down_spd / 2, 10)
+
+        if data == "1":
+            self.Mc.web_btn_status('adj_up','1')
+            self.check_adj = 1
+            while self.check_adj == 1:
+                self.check_input(0)
+                ca = self.Mc.s2(1,300)
+                if ca == 0: # ma_tripped stop loop
+                    self.check_adj = 0
+
+        if data == "0":
+            # part of web exclusive button group - turn on to disable other buttons, then off
+            self.Mc.web_btn_status('adj_stop','1')
+            self.Mc.web_btn_status('adj_stop','0')
+            self.Mc.s2(0,0)
+            self.check_adj = 0
+
+        if data == "-1":
+            self.Mc.web_btn_status('adj_down','1')
+            self.check_adj = -1
+            while self.check_adj == -1:
+                self.check_input(0)
+                ca = self.Mc.s2(-1,300)
+                if ca == 0: # ma_tripped stop loop
+                    self.check_adj = 0               
+
+    def reset_intg(self):
+        None
+
+    def set_rough_fine(self,val):
+        if val == 0:
+            self.switch_to_fine = 0
+            self.switch_to_rough = 1
+        else:
+            self.switch_to_fine = 1
+            self.switch_to_rough = 0
+
+    def auto_pid(self, val,test_or_cal='test',mode='i',cal_point=0): #auto pid procedure
+        self.mq(self.qs9,{'data':mode})
+        self.set_pid_btn(0) # set web start, stop, pause  button state to start
+        self.marker_st = time.time()
+        self.Mc.get_kpv_file() # get kpv values from file
+        self.switch_to_fine = 1 # start in fine mode          
+        self.switch_to_rough = 0 # start in fine mode
+        self.outlet = 1
+        self.inlet = 0
+        self.marker_send_in_progress = 0
+        if mode == 'i':
+            self.marker_countdown = self.in_count_time
+        elif mode == 'p':
+            self.marker_countdown = self.psi_count_time
+        try: # catch auto_pid failure
+            #self.cprint("auto_pid entered")
+            stpt = val
+            if stpt == 0:
+                self.marker_countdown *= 2            
+            p = pp = i = d = 0
+            self.first_inst = 1 # pid just started
+            
+            # set valve positions
+            if self.inlet_angle < self.Mc.s0_default_angle - 5: # open past init angle so close
+                self.close_inlet()
+            if self.outlet_angle < self.Mc.s1_default_angle - 5:
+                self.close_outlet()
+            # set valve positions
+                    
+            if val > -1:
+                # used to set button on web page for current marker
+                st = str(val)
+                st = st.replace(".","_")
+                st = st.replace("_0","")
+                if mode == 'i':
+                    btn = 'auto_' + st
+                if mode == 'p':
+                    btn = 'auto_psi_' + st      
+                self.Mc.web_btn_status(btn,'1')
+                
+                self.SP_actual = self.get_SP_val() # update in values from crystal
+                self.init_SP_actual = self.SP_actual
+                self.SP_actual_prev = self.SP_actual          
+                self.DP_actual = self.get_DP_val() # update psi values from crystal
+                self.init_DP_actual = self.DP_actual
+                self.DP_actual_prev = self.DP_actual                                 
+
+            if mode == 'p':
+                self.cprint("Setpoint = %s psi" %stpt)
+                stpt_div = self.full_auto_stpt / (self.psi_stpt_divisions - 1) # difference between each setpoint for full auto operation
+                psi_stpt_div_cal = self.full_auto_stpt / (self.psi_stpt_cal_divisions - 1) # difference between each calibration setpoint for full auto operation                
+                if val != self.psi_prev_stpt: # update web setpoint display
+                    self.psi_prev_stpt = val
+                    Dict = {'dest':'psi_stpt_display', 'data':val}
+                    self.mq(self.qw17, Dict)             
+                self.psi_switch_stpt = stpt / self.psi_switch_stpt_divisor # setpoint to switch over from rough pid to fine pid                   
+                if self.psi_switch_stpt < 0.1:
+                    self.psi_switch_stpt = 0.1
+                self.psi_switch_stpt_rough = 200
+                self.psi_rough_dbnd = 0
+                p = stpt - self.SP_actual           
+            if mode == 'i':
+                self.cprint("Setpoint = %s in" %stpt)   
+                self.reset_vals = 1 # reset pid values                 
+                stpt_div = self.full_auto_stpt / (self.in_stpt_divisions - 1) # difference between each setpoint for full auto operation
+                in_stpt_div_cal = self.full_auto_stpt / (self.in_stpt_cal_divisions - 1) # difference between each calibration setpoint for full auto operation            
+                if val != self.in_prev_stpt: # update web setpoint display
+                    self.in_prev_stpt = val
+                    Dict = {'dest':'stpt_display', 'data':val}
+                    self.mq(self.qw16, Dict)                
+                self.in_switch_stpt = self.Mc.Kpv[138] # inch setpoint to switch over from rough pid to fine pid
+                self.in_switch_stpt_rough = self.Mc.Kpv[139]
+                self.in_switch_soak = self.Mc.Kpv[143]
+                self.in_fine_dbnd = self.Mc.Kpv[142]
+                self.in_rough_dbnd = 0     
+                p = stpt - self.DP_actual
+            self.stop_one_shot = 0    
+            self.pid_one_shot = 1               
+            st = time.time()        
+            reset_intg = 0
+            M_stop = 0
+            pp = p
+
+            while self.pid_run and stpt != -1:
+                #self.cprint("pid_run = %s" %self.pid_run)
+                var = self.check_input(0)
+                if var == 0:
+                    self.pid_run = 0
+                if self.pid_run == 1: # wait for initial pid start button press
+                    if self.pid_one_shot == 1: # procedure to re-center adjuster
+                        #self.cprint("pid auto center")
+                        self.send_web_message("Initial center adjuster")
+                        self.Mc.center_in_adjuster()
+                        self.pid_one_shot = 0
+                elif self.pid_run == 0 and M_stop == 0:
+                    #self.Mc.rest_motors()
+                    M_stop = 1 # only need to fire once
+
+                #---------------------Main while loop-----------------------
+                while self.pid_run == 1 and stpt != None:
+                    if self.full_auto == 1 and (time.time() - self.marker_st) / 1000 > self.max_marker_min * 60:
+                        if self.purge_active == 1:
+                            self.purge_active = 0
+                            self.pid_run = 0
+                            return 0
+                        else:
+                            self.send_web_message("Max allowable time to send a marker reached")
+                            self.next_point = 1
+                            if stpt != 0:
+                                self.send_web_message("Moving to next marker")
+                    cif = 1
+                    self.DP_actual_prev = self.DP_actual
+                    self.DP_actual = self.get_DP_val() 
+                    self.SP_actual_prev = self.SP_actual
+                    self.SP_actual = self.get_SP_val()                        
+                    pw = 0
+                    if self.pid_pause == 0:
+                        Dict = {'dest':'pid_running','data':1}
+                        self.mq(self.qw25,Dict)
+                        var = self.check_input(0)
+                        if var == 0:
+                            sef.pid_run = 0
+                            stpt = None
+                        vap = 0
+                        if self.full_auto == 1:
+                            vap = self.check_next_pt()
+                            #self.cprint("vap : %s"%vap)
+                        # move to next/prev point?
+                        if vap != 0:
+                            self.marker_sent = 0
+                            self.prev_stpt = stpt
+                            stpt = stpt - stpt_div * vap
+                            if stpt < 0:
+                                stpt = 0                            
+                            if stpt % stpt_div != 0:
+                                if mode == 'i':
+                                    for i in range(int(self.in_stpt_divisions),0,-1):
+                                        if stpt_div * i < self.prev_stpt:
+                                            print(stpt_div * i)
+                                            stpt = stpt_div * i
+                                            break
+                                elif mode == 'p':
+                                    for i in range(int(self.psi_stpt_divisions),0,-1):
+                                        if stpt_div * i < self.prev_stpt:
+                                            stpt = stpt_div * i
+                                            break                                    
+                            #self.cprint("stpt : %s"%stpt)
+                            if mode == 'i':
+                                Dict = {'dest':'stpt_display', 'data':stpt}
+                            if mode == 'p':
+                                Dict = {'dest':'psi_stpt_display', 'data':stpt}                                
+                            self.mq(self.qw16, Dict)
+    
+                            self.number_markers_sent = 0
+                            self.send_web_message("New setpoint = %s"%stpt)
+                            self.marker_sent = 0
+                            self.stable_st = 0
+                            self.marker_send_st = 0
+                            cif = 0
+                            self.auto_pid(stpt,'test',mode) # start auto pid at next marker
+                            
+                        vap = 0
+                        if self.full_auto == 1: 
+                            vap = self.check_prev_pt()
+                        if vap != 0:
+                            self.prev_stpt = stpt
+                            stpt = stpt + stpt_div * vap
+                            if stpt > self.full_auto_stpt:
+                                stpt = self.full_auto_stpt
+                            if stpt % stpt_div != 0:
+                                if mode == 'i':
+                                    for i in range(1,int(self.in_stpt_divisions)):
+                                        if stpt_div * i > self.prev_stpt:
+                                            stpt = stpt_div * i
+                                            break
+                                elif mode == 'p':
+                                    for i in range(1,int(self.psi_stpt_divisions)):
+                                        if stpt_div * i > self.prev_stpt:
+                                            stpt = stpt_div * i
+                                            break
+                            if mode == 'i':
+                                Dict = {'dest':'stpt_display', 'data':stpt}
+                            if mode == 'p':
+                                Dict = {'dest':'psi_stpt_display', 'data':stpt}                                
+                            self.mq(self.qw16, Dict)
+    
+                            self.number_markers_sent = 0
+                            self.send_web_message("New setpoint = %s"%stpt)
+                            self.marker_sent = 0
+                            self.stable_st = 0
+                            self.marker_send_st = 0
+                            cif = 0
+                            self.auto_pid(stpt,'test',mode) # start auto pid at next marker
+                        # move to next/prev point?                    
+
+                        if mode == 'p' and cif == 1:
+                            self.Mc.equalizer_ctrl(0) # make sure the equalizer is open          
+                            if stpt != 0:
+                                self.Mc.vent_ctrl(0) # make sure the psi vent is closed
+                            else:
+                                self.Mc.vent_ctrl(1) # make sure the psi vent is open
+                        elif mode == 'i' and cif == 1:
+                            self.Mc.vent_ctrl(1) # make sure the psi vent is open
+                            if stpt != 0:
+                                self.Mc.equalizer_ctrl(1) # make sure the equalizer is closed
+                            else:
+                                self.Mc.equalizer_ctrl(0) # make sure the equalizer is open
+
+                        M_stop = 1 #???
+                        
+                        if self.pid_run != None and stpt != None and cif == 1: # conditions correct to run pid
+                            
+                            dt = time.time() - st # time between pid cycles for algorithm
+                            dst = time.time()
+                            st = time.time() # reset start time for next cycle
+                            pp = p # proportional error value from previous pid iteration
+                            if mode == 'p':
+                                p = stpt - self.SP_actual # calculate new proportional error
+                                if abs(p) > self.psi_der_holdoff:
+                                    d = 0
+                                else:
+                                    d = p - pp # derivative
+                            elif mode == 'i':
+                                p = stpt - self.DP_actual # calculate new proportional error
+                                d = p - pp # derivative
+
+                            # calculate avg derivative
+                            if time.time() - dst < self.der_cycle_time:
+                                self.avg_der_cycle_count += 1
+                            else:
+                                dst = time.time()
+                                self.avg_der_array_length = self.avg_der_cycle_count
+                                self.avg_der_cycle_count = 0
+                            self.avg_der_array.append(d)
+                            while len(self.avg_der_array) > self.avg_der_array_length:
+                                self.avg_der_array.pop(0)
+                            if len(self.avg_der_array) > 0:
+                                self.avg_der = sum(self.avg_der_array) / len(self.avg_der_array)
+                            # calculate avg derivative
+                            
+                            if mode == 'p':
+                                if abs(p) > self.psi_switch_stpt + self.psi_fine_dbnd:
+                                    self.send_web_message("SP outside of setpoint deadband")
+                            elif mode == 'i':
+                                if abs(p) > self.in_switch_stpt + self.in_fine_dbnd:
+                                    self.send_web_message("DP outside of setpoint deadband")                                    
+                            #-----------------------------------------------
+                            #fine pid
+                            if self.switch_to_fine == 1:
+                                cif = 1 # used to bypass fine to get to rough
+                                if self.switch_to_rough == 1 or self.first_inst == 1: # reset values if switching to rough to fine pid
+                                    if self.first_inst == 1:
+                                        self.first_inst = 0
+                                    self.close_inlet()
+                                    self.close_outlet()
+                                    d = 0
+                                    i = 0
+                                    self.switch_to_rough = 0
+                                    if mode == 'p':
+                                        kp = self.Mc.s2_Kp_psi
+                                        ki = self.Mc.s2_Ki_psi
+                                        kd = self.Mc.s2_Kd_psi
+                                    elif mode == 'i':
+                                        kp = self.Mc.s2_Kp_in
+                                        ki = self.Mc.s2_Ki_in
+                                        kd = self.Mc.s2_Kd_in                                     
+
+                                # determine if switch to rough is in order
+                                if mode == 'p':              
+                                    if abs(p) > self.psi_switch_stpt + self.psi_fine_dbnd:
+                                        cif = 0
+                                        self.switch_to_rough = 1
+                                elif mode == 'i':              
+                                    if abs(p) > self.in_switch_stpt + self.in_fine_dbnd:
+                                        cif = 0
+                                        self.switch_to_rough = 1                                        
+                                # determine if switch to rough is in order
+
+                                # make sure inlet and outlet are fully closed
+                                if mode == 'p':
+                                    if cif == 1 and self.inlet_angle > self.Mc.s0_min_angle_psi:
+                                        self.close_inlet()
+                                elif mode == 'i':        
+                                    if cif == 1 and self.inlet_angle > self.Mc.s0_min_angle_in:
+                                        self.close_inlet()                                    
+                                if cif == 1 and self.outlet_angle > self.Mc.s1_min_angle:
+                                    self.close_outlet()
+
+                                if stpt < 0: # command to stop pid
+                                    self.full_auto = 0
+                                    Dict = {'dest':'next_prev_button_enable', 'data':0}
+                                    self.mq(self.qw34, Dict)                                      
+
+                                self.psi_rough_dbnd = 0.1 # deadband to prevent cycling between fine and rough pid
+
+                                if self.sounds_active == 1 and self.marker_send_in_progress == 0:
+                                    if self.sound_playing == 0 or time.time() - self.sound_st > self.sound_interval:
+                                        self.play_sound('psi_stable')
+                                        self.sound_playing = 1
+                                        self.sound_st = time.time()
+
+                                # full auto operation of markers-------------------------------------------------------------
+                                if cif == 1 and (self.full_auto == 1 or test_or_cal == 'cal') and stpt != -1 and stpt != None:
+                                    if test_or_cal == 'test':
+                                        text = 'marker'
+                                    elif test_or_cal == 'cal':
+                                        text = 'calibration point'
+                                    if self.marker_sent == 0 and self.next_point == 0 and self.prev_point == 0:
+                                        if (mode == 'p' and abs(p) <= self.psi_stable_dbnd and abs(d) < self.stable_der_psi) or \
+                                           (mode == 'i' and abs(p) <= self.in_stable_dbnd and abs(d) < self.stable_der_in):
+                                            if self.stable_st == 0 and self.marker_send_in_progress == 0: # just entered deadband - start the timer
+                                                self.stable_st = time.time() # start the timer to determine inch reading stability for marker
+                                                #self.cprint("Inside deadband - timer started")
+                                                if mode == 'p':
+                                                    if self.purge_active == 1:
+                                                        self.send_web_message("pre-filling system with nitrogen for purge - closing inlet valve in %s" %self.marker_countdown)
+                                                    else:
+                                                        self.send_web_message("Inside SP setpoint deadband - Sending %s in %s" %(text,self.marker_countdown))
+                                                elif mode == 'i':
+                                                    self.send_web_message("Inside DP setpoint deadband - Sending %s in %s" %(text,self.marker_countdown))
+                                                self.marker_countdown -= 1
+                                                if self.marker_countdown < 0:
+                                                    self.marker_countdown = 0
+                                                self.marker_countup += 1
+                                            elif (self.marker_countdown <= 0):  # start timer already running - readings stable for enough time to send marker
+                                                self.marker_send_in_progress = 1
+                                                if mode == 'i':
+                                                    self.send_web_message("Sending DP %s: %s"%(text,stpt))
+                                                    self.cprint("Sending DP %s %s" %(text,stpt)) 
+                                                    if test_or_cal == 'test':
+                                                        self.send_marker('DP',self.DP_actual,self.meter_DP_actual,'test',stpt)
+                                                    elif test_or_cal == 'cal':
+                                                        self.send_marker('DP',self.DP_actual,self.meter_DP_actual,'cal',stpt,cal_point)
+                                                    self.marker_countdown = self.in_count_time                                                       
+                                                elif mode == 'p':
+                                                    if self.purge_active == 1:
+                                                        self.purge_active = 0
+                                                        self.pid_run = 0
+                                                        return 1 # exit back to full test command
+                                                    else:                                                    
+                                                        self.send_web_message("Sending SP %s: %s"%(text,str(stpt + self.baro_psi)))
+                                                        self.cprint("Sending SP %s %s" %(text,str(stpt+self.baro_psi)))                                                    
+                                                        if test_or_cal == 'test':
+                                                            self.send_marker('SP',self.SP_actual + self.baro_psi,self.meter_SP_actual,'test',stpt + self.baro_psi)
+                                                        elif test_or_cal == 'cal':
+                                                            self.send_marker('SP',self.SP_actual + self.baro_psi,self.meter_SP_actual,'cal',stpt,cal_point)
+                                                    self.marker_countdown = self.psi_count_time
+                                                if stpt == 1: # ????
+                                                    time.sleep(5)
+                                                    
+                                                self.marker_sent = 1
+                                                self.stable_st = 0
+                                                self.marker_send_st = time.time()
+                                                self.marker_countup = 0
+                                            if time.time() - self.stable_st > self.marker_countup and self.marker_send_in_progress == 0:
+                                                if mode == 'p':
+                                                    if self.purge_active == 1:
+                                                        self.send_web_message("pre-filling system with nitrogen for purge - closing inlet valve in %s" %self.marker_countdown)
+                                                    else:
+                                                        self.send_web_message("Inside SP setpoint deadband - Sending %s in %s" %(text,self.marker_countdown))
+                                                elif mode == 'i':
+                                                    self.send_web_message("Inside DP setpoint deadband - Sending %s in %s" %(text,self.marker_countdown))
+                                                self.marker_countdown -= 1
+                                                if self.marker_countdown < 0:
+                                                    self.marker_countdown = 0                                                
+                                                self.marker_countup += 1
+                                        else: # outside of deadband - reset timer
+                                            if (mode == 'p' and abs(d) > self.stable_der_psi):
+                                                    self.send_web_message("SP derivative too high (%s > %s)- resetting timer"%(format(abs(d),'.2f'), self.stable_der_psi))
+                                            elif (mode == 'i' and abs(d) > self.stable_der_in):
+                                                    self.send_web_message("DP derivative too high (%s > %s)- resetting timer"%(format(abs(d),'.2f'), self.stable_der_in))                                                    
+                                            else:
+                                                None
+                                                self.send_web_message("Outside of deadband - timer reset")
+                                            self.stable_st = 0
+                                            if mode == 'p':
+                                                self.marker_countdown = self.psi_count_time
+                                            elif mode == 'i':
+                                                self.marker_countdown = self.in_count_time
+                                            if stpt == 0:
+                                                self.marker_countdown *= 2
+                                            self.marker_countup = 0
+                                    elif self.next_point == 0 or self.prev_point == 0: # marker already sent
+                                        if time.time() - self.marker_send_st > self.marker_time or self.number_markers_sent >= self.num_markers:
+                                            self.marker_send_in_progress = 0
+                                            self.stable_st = 0
+                                            self.marker_send_st = 0
+                                            self.marker_sent = 0
+                                            self.number_markers_sent += 1
+                                            if self.number_markers_sent >= self.num_markers:
+                                                self.cprint("Moving to next marker")
+                                                self.send_web_message("Moving to next marker")
+                                                if mode == 'p':
+                                                    stpt = stpt - stpt_div # setpoint for next marker
+                                                elif mode == 'i':
+                                                    stpt = stpt - stpt_div # setpoint for next marker
+                                                self.number_markers_sent = 0
+                                                if stpt < 0:
+                                                    self.send_web_message("Test complete")
+                                                    self.stpt = None
+                                                    self.stop_button()
+                                                    self.Mc.rest_motors()
+                                                    cif = 0
+                                                else:
+                                                    self.send_web_message("New setpoint = %s"%stpt)
+                                                    self.marker_sent = 0
+                                                    self.stable_st = 0
+                                                    self.marker_send_st = 0
+                                                    self.auto_pid(stpt,'test', mode) # start auto pid at next marker
+                                                    cif = 0
+                                elif cif == 1 and self.full_auto_cal == 0: # not in full auto
+                                    self.stable_st = 0 # reset the timer for inch stability for markers
+                                    self.marker_sent = 0
+                                    self.marker_send_st = 0
+                                else: # cif = 0
+                                    None
+                                # full auto operation of markers-------------------------------------------------------------
+
+
+                            # full auto calibration----------------------------------------------------------------------
+                            # full auto calibration----------------------------------------------------------------------
+
+                                # integral
+                                if cif == 1:
+                                    if mode == 'p':
+                                        if abs(p) < .01:
+                                            i = 0
+                                        if abs(p) < self.Mc.s2_intg_holdoff_psi:
+                                            i += p * dt # integral - running sum of errors
+                                        if abs(i) > self.Mc.s2_max_intg_psi:
+                                            i = (i/abs(i)) * self.Mc.s2_max_intg_psi
+                                    elif mode == 'i':
+                                        if abs(p) < .03:
+                                            i = 0
+                                        if abs(p) < self.Mc.s2_intg_holdoff_in:
+                                            i += p * dt # integral - running sum of errors
+                                        if abs(i) > self.Mc.s2_max_intg_in:
+                                            i = (i/abs(i)) * self.Mc.s2_max_intg_in                                            
+
+                                    pid = pid = kp * p + ki * i + kd * d
+                                    
+                                    pw = 0
+                                    if stpt != 0: #prevent divide by 0
+                                        if mode == 'p':
+                                            pw = abs(pid/self.psi_switch_stpt) * self.Mc.s2_rng + self.Mc.s2_min
+                                        elif mode == 'i':
+                                            pw = abs(pid/self.in_switch_stpt) * self.Mc.s2_rng + self.Mc.s2_min
+                                    if p > -0.00 and stpt != 0: # inside deadband - under stpt
+                                        self.Mc.s2(self.Mc.s2_up_spd, pw) # run adjuster at the new level / pw - save value as actual value act
+                                    if p < 0.00 and stpt != 0: #inside deadband - over stpt
+                                        self.Mc.s2(self.Mc.s2_down_spd, pw) # run adjuster at the new level / pw - save value as actual value act
+                                    if mode == 'p':
+                                        self.Mc.s2_soak_scale = 1 - abs(p / self.psi_switch_stpt) # change multiplier to change soak time based on distance from setpoint
+                                    if mode == 'i':
+                                        self.Mc.s2_soak_scale = 1 - abs(p / self.in_switch_stpt) # change multiplier to change soak time based on distance from setpoint
+                                    self.Mc.s2_soak_scaled = self.Mc.s2_soak * self.Mc.s2_soak_scale
+                                    if dt > 0.25:
+                                        None
+                                    self.Mc.s2(0, self.Mc.s2_soak) # stop the adjuster and allow soak time for fluctuations in pressure
+                            # fine pid
+                            #-----------------------------------------------
+
+
+
+                            #-----------------------------------------------
+                            #rough pid
+                            if self.switch_to_rough == 1:
+
+                                if self.switch_to_fine == 1: # reset values if switching to fine from rough pid
+                                    i = 0
+                                    d = 0
+                                    self.outlet = 1
+                                    self.inlet = 1
+                                    self.switch_to_fine = 0
+
+                                # determine if switch to fine is in order
+                                cif = 1 # used to bypass rough to get to fine
+                                if mode == 'p':
+                                    if abs(p) < self.psi_switch_stpt and \
+                                       (p * pp < 0 or abs(self.avg_der) < self.psi_fine_sw_der):
+                                        cif = 0
+                                        self.switch_to_fine = 1
+                                elif mode == 'i':
+                                    if abs(p) < self.in_switch_stpt and \
+                                       (p * pp < 0 or abs(self.avg_der) < self.in_fine_sw_der):
+                                        cif = 0
+                                        self.switch_to_fine = 1                                    
+                                # determine if switch to fine is in order
+
+                                self.psi_rough_dbnd = 0 # reset rough dbnd
+                                in_rough_dbnd = 0 # reset rough dbnd
+
+
+                                """-----------------------------"""
+                                """-----------------------------"""
+                                '''outlet pid'''
+                                if cif == 1 and \
+                                ((mode == 'p' and p < -self.psi_switch_stpt - self.psi_rough_dbnd and stpt != 0) or \
+                                 (mode == 'i' and p < -self.in_switch_stpt - in_rough_dbnd and stpt != 0)): # below setpoint
+                                    # switching from inlet to outlet
+                                    if self.inlet == 1 or self.first_inst == 1:
+                                        if self.first_inst == 1:
+                                            self.first_inst = 0
+                                        self.close_inlet()
+                                        self.inlet = 0
+                                        self.outlet = 1
+                                        d = 0
+                                        self.Mc.s2(0,0) # No need to operate adjuster until outside of rough range
+                                        time.sleep(self.psi_switch_soak / 1000)
+                                        if mode == 'p':
+                                            self.init_outlet('p') # move inlet to angle just before pressure increase                                            
+                                            kp = self.Mc.s1_Kp_psi
+                                            ki = self.Mc.s1_Ki_psi
+                                            kd = self.Mc.s1_Kd_psi
+                                        elif mode == 'i':
+                                            self.init_outlet('i') # move inlet to angle just before pressure increase
+                                            kp = self.Mc.s1_Kp_in
+                                            ki = self.Mc.s1_Ki_in
+                                            kd = self.Mc.s1_Kd_in                                     
+
+                                    i += p;
+                                    if mode == 'p':
+                                        if abs(p) > self.Mc.s1_intg_holdoff_psi:
+                                            i = 0
+                                        if abs(i) > self.Mc.s1_max_intg_psi:
+                                            i = (i/abs(i)) * self.Mc.s1_max_intg_psi
+                                    elif mode == 'i':
+                                        if abs(p) > self.Mc.s1_intg_holdoff_in:
+                                            i = 0
+                                        if abs(i) > self.Mc.s1_max_intg_in:
+                                            i = (i/abs(i)) * self.Mc.s1_max_intg_in                                           
+
+                                    pid = (kp * p) + (ki * i) + (kd * d)
+                                    if pid > 0 and pid != 0:
+                                        pw = (pid / self.Mc.s1_pw_holdoff) * self.Mc.s1_move_close_range + (pid /abs(pid)) * self.Mc.s1_move_min
+                                    elif pid != 0:
+                                        if mode == 'p':
+                                            pw = (pid / self.Mc.s1_pw_holdoff) * self.Mc.s1_move_open_range_psi + (pid /abs(pid)) * self.Mc.s1_move_min                                        
+                                        elif mode == 'i':
+                                            pw = (pid / self.Mc.s1_pw_holdoff) * self.Mc.s1_move_open_range_in + (pid /abs(pid)) * self.Mc.s1_move_min                                                                                    
+
+                                    # move outlet valve
+                                    self.Mc.s1(pw)
+                                    time.sleep(self.Mc.s1_soak/1000)
+                                    """outlet pid"""
+                                    """-----------------------------"""
+
+
+
+                                    """-----------------------------"""
+                                    """-----------------------------"""
+                                    ''' inlet pid'''
+                                elif cif == 1 and \
+                                ((mode == 'p' and p > self.psi_switch_stpt + self.psi_rough_dbnd and stpt != 0) or \
+                                 (mode == 'i' and p > self.in_switch_stpt + in_rough_dbnd and stpt != 0)): 
+                                    # switching from outlet to inlet
+                                    if self.outlet == 1 or self.first_inst == 1:
+                                        if self.first_inst == 1:
+                                            self.first_inst = 0
+                                        self.close_outlet()
+                                        d = 0
+                                        i = 0
+                                        self.outlet = 0
+                                        self.inlet = 1
+                                        self.Mc.s2(0,0) # No need to operate adjuster until outside of rough range
+                                        if mode == 'p':
+                                            time.sleep(self.psi_switch_soak / 1000)
+                                            self.init_inlet() # move inlet to angle just before pressure increase
+                                        if mode == 'i':
+                                            time.sleep(self.in_switch_soak / 1000)
+                                        
+                                        if mode == 'p':
+                                            self.init_inlet('p') # move inlet to angle just before pressure increase                                            
+                                            kp = self.Mc.s0_Kp_psi
+                                            ki = self.Mc.s0_Ki_psi
+                                            kd = self.Mc.s0_Kd_psi
+                                        elif mode == 'i':
+                                            self.init_inlet('i') # move inlet to angle just before pressure increase
+                                            kp = self.Mc.s0_Kp_in
+                                            ki = self.Mc.s0_Ki_in
+                                            kd = self.Mc.s0_Kd_in                                     
+                                    # switching from outlet to inlet
+
+                                    i += p;
+                                    if mode == 'p':
+                                        if abs(p) > self.Mc.s0_intg_holdoff_psi:
+                                            i = 0
+                                        if abs(i) > self.Mc.s0_max_intg_psi:
+                                            i = (i/abs(i)) * self.Mc.s0_max_intg_psi
+                                    elif mode == 'i':
+                                        if abs(p) > self.Mc.s0_intg_holdoff_in:
+                                            i = 0
+                                        if abs(i) > self.Mc.s0_max_intg_in:
+                                            i = (i/abs(i)) * self.Mc.s0_max_intg_in                                           
+                                            
+                                    pid = (kp * p) + (ki * i) + (kd * d)
+                                    pw = 0
+                                    if pid > 0:
+                                        pw = (pid / self.Mc.s0_pw_holdoff) * self.Mc.s0_move_open_range +  (pid /abs(pid)) *  self.Mc.s0_move_min
+                                    elif pid < 0:
+                                        pw = (pid / self.Mc.s0_pw_holdoff) * self.Mc.s0_move_close_range +  (pid /abs(pid)) *  self.Mc.s0_move_min
+                                    else:
+                                        pw = 0
+
+                                    # move inlet valve
+
+                                    if stpt != 0 and stpt != None and cif == 1 and self.next_point == 0 and self.prev_point == 0:
+                                        #print('line 1012 stpt : %s'%stpt)
+                                        #print('cntrl.py line 1011 pw : %s'%pw)
+                                        self.Mc.s0(-1 * pw,mode)
+                                    time.sleep(self.Mc.s0_soak/1000)
+                                    ''' inlet pid'''
+                                    """-----------------------------"""
+                                    """-----------------------------"""
+                                    
+                                    
+                            if dt > 0.25:
+                                Dict = {'dest':'web_pid', 'p':p, 'i':i, 'd':d, 'kp':kp, 'ki':ki, 'kd':kd, 'kpp':kp*p, 'kii':ki*i, 'kdd':kd*d, 'pid': kp*p + ki*i + kd*d,'pw':pw}
+                                self.send_web_pid(Dict)
+
+
+                            else: #bogus numbers - do nothing
+                                pass
+                    else:
+                        pass
+                    var = self.check_input(0)
+                    if var == 0:
+                        self.pid_run = 0
+                    time.sleep(0.05)
+                var = self.check_input(0)
+                if var == 0:
+                    self.pid_run = 0
+                time.sleep(0.05)
+                
+        # auto_pid failure
+        except:
+            raise
+            self.cprint("Failure in auto pid")
+            self.Mc.rest_motors()
+            
+
+    def close_inlet(self):
+        self.Mc.s0(self.Mc.s0_max_angle)
+
+    def init_inlet(self, mode = 'i'):
+        #self.cprint("initialize inlet angle")
+        if mode == 'p':
+            self.Mc.s0(self.Mc.s0_init_angle_psi - s_kit.servo[0].angle,mode)
+        elif mode == 'i':
+            self.Mc.s0(self.Mc.s0_init_angle_in - s_kit.servo[0].angle,mode)            
+
+    def zero_inlet(self,data):
+        if data > 0: 
+            self.send_web_message("temporary inlet max angle : %s"%data)
+            self.Mc.mod_kpv_file_entry(40,int(data))
+            self.Mc.s0_max_angle_prev = self.Mc.s0_max_angle
+            self.Mc.s0_max_angle = data
+        else:
+            self.send_web_message("previous inlet max angle : %s"%self.Mc.s0_max_angle_prev)
+            self.Mc.s0_max_angle = int(s_kit.servo[0].angle)
+            self.Mc.mod_kpv_file_entry(40,int(self.Mc.s0_max_angle))
+            self.send_web_message("new inlet max angle : %s"%self.Mc.s0_max_angle)
+        
+    def zero_outlet(self,data):
+        self.cprint('zero_outlet')
+        if data > 0: 
+            self.send_web_message("temporary outlet max angle : %s"%data)
+            self.Mc.mod_kpv_file_entry(54,int(data))
+            self.Mc.s1_max_angle_prev = self.Mc.s1_max_angle
+            self.Mc.s1_max_angle = data
+        else:
+            self.send_web_message("previous outlet max angle : %s"%self.Mc.s1_max_angle_prev)
+            #self.Mc.s1_max_angle = int(s_kit.servo[1].angle)
+            self.Mc.s1_max_angle = int(s_kit.servo[3].angle)
+            self.Mc.mod_kpv_file_entry(54,int(self.Mc.s1_max_angle))
+            self.send_web_message("new outlet max angle : %s"%self.Mc.s1_max_angle)
+        
+    def save_all(self, user):
+        try:
+            self.Mc.update_adj_pos_display()
+        except:
+            self.cprint("not able to update adj position display")
+        Dict =  {'dest':'save_msg_log', 'purpose':'save_msg_log', 'data':'1'}
+        self.mq(self.qw11,Dict)
+        
+    def check_heartbeat(self):
+        if time.time() - self.hb_st > self.hb_max_time:
+            self.hb_restarts = self.hb_restarts + 1
+            self.hb_st = time.time()
+            if self.hb_restarts > self.hb_max_restarts:
+                None
+                #self.cprint("max number(%s) of program restarts attempted. Program will terminate"%self.hb_max_restarts)
+            else:
+                None
+                #self.cprint("Attempting program restart - attempt #%s"%self.hb_restarts)
+                #self.restart_program()
+
+    def restart_program(self):
+        self.mq(self.q33, 1)
+        
+    def save_msg_log(self,msg):
+        try: 
+            self.file_o = open("log/msg_log.txt","r+")
+        except:
+            self.cprint("Not able to open the msg_log.txt file")
+        else: 
+            try:
+                rd_all = self.file_o.readlines() # read in all lines of file
+            except:
+                self.cprint("msg_log file did not read in")
+            else: # all lines read in
+                self.file_o.truncate(0)
+                self.file_o.close()
+                try:
+                    self.file_o = open("log/msg_log.txt","r+")
+                except:
+                    self.cprint("not able to open msg_log file")
+                else:
+                    try:
+                        self.file_o.write(rd_all + "\n" + msg)
+                    except:
+                        self.cprint("not able to write to msg_log file")                        
+                    else:
+                        self.file_o.close()
+                try: # backup
+                    shutil.copy('log/msg_log.txt', 'log/msg_log_bu.txt')
+                except:
+                    self.cprint("Backup of msg_log file failed")
+        
+    def close_outlet(self):
+        #self.cprint('close_outlet : %s'%self.Mc.s1_max_angle)
+        self.Mc.s1(self.Mc.s1_max_angle)
+
+    def init_outlet(self, mode = 'i'):
+        self.cprint("initialize outlet angle")
+        if mode == 'p':
+            #self.Mc.s1(self.Mc.s1_init_angle_psi - s_kit.servo[1].angle)
+            self.Mc.s1(self.Mc.s1_init_angle_psi - s_kit.servo[3].angle)
+        elif mode == 'i':
+            #self.Mc.s1(self.Mc.s1_init_angle_in - s_kit.servo[1].angle)
+            self.Mc.s1(self.Mc.s1_init_angle_in - s_kit.servo[3].angle)
+
+
+    def start_button(self, data):
+        val = float(data['data'])
+        self.pid_pause = 0
+        self.set_pid_btn(0)
+        if data['purpose'] == 'pid_start_inch':
+            self.cprint("Commanded inch setpoint = " + str(val))
+            if val > -1:
+                self.Mc.vent_ctrl(1)
+                self.pid_run = 1
+                self.auto_pid(val,'test','i')
+        elif data['purpose'] == 'pid_start_psi':
+            self.cprint("Commanded psi setpoint = " + str(val))
+            if val > -1:
+                self.Mc.vent_ctrl(0)
+                self.pid_run = 1
+                self.auto_pid(val,'test','p')
+
+    def stop_button(self):
+        #getframe_expr = 'sys._getframe({}).f_code.co_name'
+        #self.cprint("stop_button called by %s"%eval(getframe_expr.format(2)))
+        self.pid_pause = 0
+        self.set_pid_btn(1)
+        self.pid_run = 0
+        self.full_auto = 0
+        self.full_test_command(0)
+        Dict = {'dest':'next_prev_button_enable', 'data':0}
+        self.mq(self.qw34, Dict)          
+        self.full_auto_cal = 0
+        # have to have try / except because of super call
+        try:
+            self.s0(self.s0_max_angle)
+            self.s1(self.s1_max_angle)
+            self.s2(0,0)
+        except:
+            self.Mc.s0(self.Mc.s0_max_angle)
+            self.Mc.s1(self.Mc.s1_max_angle)
+            self.Mc.s2(0,0)
+        self.send_web_message("Stop command received")
+
+    def pause_button(self, data):
+        self.first_inst = 1
+        if data == 1:
+            self.close_inlet()
+            self.close_outlet()
+            if self.pid_run == 1 or self.pid_run == 1:
+                self.send_web_message("Auto operation paused")
+                self.close_inlet()
+                self.close_outlet()
+                self.pid_pause = 1
+                self.set_pid_btn(2)
+            else:
+                self.send_web_message("Nothing to pause")
+                self.set_pid_btn(1)
+        elif data == 0:
+            if self.pid_run == 1 or self.pid_run == 1:
+                self.set_pid_btn(0)
+                self.send_web_message("Auto operation resumed")
+            else:
+                self.set_pid_btn(1)
+            self.pid_pause = 0
+
+    def set_pid_btn(self,val = 1): # toggle pid auto button display colors
+        if val == 0: # start
+            try:
+                self.web_btn_status('pid_start',1)
+            except:
+                self.Mc.web_btn_status('pid_start',1)
+        elif val == 1: # stop
+            try:
+                self.web_btn_status('pid_stop',1)
+            except:
+                self.Mc.web_btn_status('pid_stop',1)
+        elif val == 2: # pause
+            try:
+                self.web_btn_status('pid_pause',1)                        
+            except:
+                self.Mc.web_btn_status('pid_pause',1)                        
+
+    def send_marker(self, dtype='None', r_read = -100.0, m_read = -100.0, test_or_cal='test', marker=-100, cal_point = '0'):
+        #print("unit_type : %s", self.unit_type)
+        Dict = {'dest':'send_marker', 'data':marker, 'unit_type':self.unit_type}
+        if self.marker_send_method == 0:
+            self.mq(self.qw9, Dict)
+        elif self.marker_send_method == 1:
+                        
+            # get correct register to send
+            if dtype == 'SP':
+                if test_or_cal == 'test':
+                    reg = self.meter_reg_sp_mark
+                elif test_or_cal == 'cal':
+                    if cal_point == 'zero':
+                        reg = self.meter_reg_sp_cal_zero
+                    elif cal_point == '0':
+                        reg = self.meter_reg_sp_cal_0
+                    elif cal_point == '25':
+                        reg = self.meter_reg_sp_cal_25
+                    elif cal_point == '50':
+                        reg = self.meter_reg_sp_cal_50
+                    elif cal_point == '75':
+                        reg = self.meter_reg_sp_cal_75
+                    elif cal_point == '100':
+                        reg = self.meter_reg_sp_cal_100
+            elif dtype == 'DP':
+                if test_or_cal == 'test':
+                    reg = self.meter_reg_dp_mark
+                elif test_or_cal == 'cal':
+                    if cal_point == 'zero':
+                        reg = self.meter_reg_dp_cal_zero
+                    elif cal_point == '0':
+                        reg = self.meter_reg_dp_cal_0
+                    elif cal_point == '25':
+                        reg = self.meter_reg_dp_cal_25
+                    elif cal_point == '50':
+                        reg = self.meter_reg_dp_cal_50
+                    elif cal_point == '75':
+                        reg = self.meter_reg_dp_cal_75
+                    elif cal_point == '100':
+                        reg = self.meter_reg_dp_cal_100
+            elif dtype == 'TP':
+                if test_or_cal == 'test':
+                    reg = self.meter_reg_tp_mark
+                elif test_or_cal == 'cal':
+                    if cal_point == 'zero':
+                        reg = self.meter_reg_tp_cal_zero
+            Dict = {'purpose':'meter_write_reg', 'register':str(reg),'value':marker, 'data_type':'float'}
+            self.mq(self.qt2, Dict)
+            
+        # record marker in database
+        Dict = {'dest':'record_marker_db', 'dtype':dtype, 'm_read':m_read,'r_read':r_read}
+        self.mq(self.qd1, Dict)
+        
+        # track maximum deviation
+        dev = abs(m_read - r_read)
+        if dev > self.max_dev:
+            self.max_dev = dev
+            
+    def full_test_command(self, data):
+        if data == 0:
+            if self.full_test_active == 1:
+                self.send_web_message("stopping full test")
+                self.meter_hold_command(0)
+                self.stop_button()
+        elif data == 1:
+            self.full_test_active = 1
+            self.set_pid_btn(0)
+            
+            ''' collect data / backup ----------------------------------------------------------------------------------'''
+            self.send_web_message("backing up tfcold in meter")
+            self.meter_write_reg(self.meter_reg_bu_tfcold,'float',1)
+
+            ''' put in hold -----------------------------------------------------------------------------------'''
+            in_hold = self.meter_hold_command(1)
+            if in_hold == 0:
+                self.send_web_message("Cancelling full test procedure")
+                self.stop_button()
+                return
+
+            ''' hold procedure successful - purge system ---------------------------------------------------'''
+            self.check_input(0)
+            self.sp_found = self.meter_SP_actual
+            mc = self.meter_manifold_control('purge')
+            if mc == 0:
+                self.send_web_message("Cancelling full test procedure")
+                self.stop_button()
+                return
+
+            ''' purge procedure successful - zero crystal ---------------------------------------------------'''
+            self.send_web_message("Zeroing reference DP and SP")
+            dp = self.get_DP_val()
+            sp = self.get_SP_val()
+            # make sure dp and sp are close to zero / purge was successful2
+            if dp <= 0.8: 
+                self.mq(self.qs6,{"purpose":"crystal_write","data" : "Z1"})
+                time.sleep(3)
+            else:
+                self.send_web_message("meter manifold not working correctly - reference DP not close enough to zero")
+                self.send_web_message("Cancelling full test procedure")
+                self.stop_button()
+                return
+            if sp <= 1.5: 
+                self.mq(self.qs6,{"purpose":"crystal_write","data" : "Z1"})
+                time.sleep(3)
+            else:
+                self.send_web_message("meter manifold not working correctly - reference SP not close enough to zero")
+                self.send_web_message("Cancelling full test procedure")
+                self.stop_button()
+                return                
+                                                      
+            dp = self.get_DP_val()
+            sp = self.get_SP_val()
+            if !(-0.05 <= dp <= 0.05):
+                self.send_web_message("not able to zero reference DP")
+                self.send_web_message("Cancelling full test procedure")
+                self.stop_button()
+                return                             
+            if !(-0.05 <= sp <= 0.05):
+                self.send_web_message("not able to zero reference SP")
+                self.send_web_message("Cancelling full test procedure")
+                self.stop_button()
+                return
+            time.sleep(1)
+            
+            ''' system ready for checks ---------------------------------------------------'''
+            if True: # SP checks ---------------------------------------------------
+                self.max_dev = 0
+                self.full_auto_checks(self.psi_full_test_range,'p') # multi-point checks
+                if self.max_dev > self.sp_tolerance or self.always_calibrate == 1:
+                    self.sp_cal_attempts = 0
+                    while self.max_dev > self.sp_tolerance and self.sp_cal_attempts < self.max_cal_attempts:
+                
+                        # calibrate -------------------------------
+                        # test_or_cal argument set to 'cal' allows countdown to send behaviour
+                        # tflow only requires low and span to calibrate
+                        self.auto_pid(0,'cal','p','0')
+                        self.auto_pid(self.psi_full_test_range,'cal','p','100')
+                        if self.psi_stpt_cal_divisions == 5:
+                            self.auto_pid(self.psi_full_test_range * 0.75,'cal','p','75')
+                        if self.psi_stpt_cal_divisions == 3 or self.psi_stpt_cal_divisions == 5:
+                            self.auto_pid(self.psi_full_test_range * 0.5,'cal','p','50')
+                        if self.psi_stpt_cal_divisions == 5:
+                            self.auto_pid(self.psi_full_test_range * 0.25,'cal','p','25')
+                            
+                        Dict = {'purpose':'meter_write_reg', 'register':str(self.meter_reg_sp_cal_done),'value':'1', 'data_type':'float'}
+                        self.mq(self.qt2, Dict)
+                
+                        # test after cal  -------------------------                                        
+                        self.max_dev = 0
+                        self.full_auto_checks(self.psi_full_test_range,'p')
+                        if self.max_dev > self.sp_tolerance:
+                            self.sp_cal_attempts += 1
+                            self.send_web_message('SP calibration failed')
+                        else:
+                            self.sp_cal_attempts = 0
+                            self.send_web_message('SP calibration successful')
+                        if self.sp_cal_attempts >= self.max_cal_attempts:
+                            self.send_web_message('Max number of SP calibration attempts reached')
+                            self.sp_cal_fail = 1
+                        else:
+                            self.send_web_message('Re-attempting DP calibration')                        
+            
+            if True: # DP checks ---------------------------------------------------
+                self.max_dev = 0
+                self.full_auto_checks(self.in_full_test_range,'i')
+                # DP calibrate if necessary (or always perform)
+                if self.max_dev > self.dp_tolerance or self.always_calibrate == 1:
+                    self.dp_cal_attempts = 0
+                    while self.max_dev > self.dp_tolerance and self.dp_cal_attempts < self.max_cal_attempts:
+                        
+                        # calibrate -------------------------------
+                        # test_or_cal argument set to 'cal' allows countdown to send behaviour
+                        # tflow only requires low and span to calibrate
+                        self.auto_pid(0,'cal','i',0)
+                        self.auto_pid(self.in_full_test_range,'cal','i','100')
+                        if self.in_stpt_cal_divisions == 5:
+                            self.auto_pid(self.in_full_test_range * 0.75,'cal','i','75')
+                        if self.psi_stpt_cal_divisions == 3 or self.psi_stpt_cal_divisions == 5:
+                            self.auto_d(self.in_full_test_range * 0.5,'cal','i','50')
+                        if self.in_stpt_cal_divisions == 5:
+                            self.auto_pid(self.in_full_test_range * 0.25,'cal','i','25')
+
+                        Dict = {'purpose':'meter_write_reg', 'register':str(self.meter_reg_dp_cal_done),'value':'1', 'data_type':'float'}
+                        self.mq(self.qt2, Dict)
+                        
+                        # test after cal  -------------------------
+                        self.max_dev = 0
+                        self.full_auto_checks(self.in_full_test_range,'i')
+                        if self.max_dev > self.dp_tolerance:
+                            self.dp_cal_attempts += 1
+                            self.send_web_message('DP calibration failed')
+                        else:
+                            self.dp_cal_attempts = 0
+                            self.send_web_message('DP calibration successful')
+                        if self.dp_cal_attempts >= self.max_cal_attempts:
+                            self.send_web_message('Max number of DP calibration attempts reached')
+                            self.dp_cal_fail = 1
+                        else:
+                            self.send_web_message('Re-attempting DP calibration')
+            
+            if True: # TP checks ---------------------------------------------------
+                self.max_dev = 0
+                self.send_marker('TP',self.TP_actual, self.meter_TP_actual, 'test', self.TP_actual)
+                self.TP_actual = None
+                # TP calibrate if necessary (or always perform)
+                if self.max_dev > self.tp_tolerance or self.always_calibrate == 1:
+                    self.tp_cal_attempts = 0
+                    while self.max_dev > self.tp_tolerance and self.tp_cal_attempts < self.max_cal_attempts:
+                        
+                        # calibrate -------------------------------
+                        self.send_marker('TP',self.TP_actual, self.meter_TP_actual, 'cal', self.TP_actual,'zero')
+                        
+                        # write new cal
+                        Dict = {'purpose':'meter_write_reg', 'register':str(self.meter_reg_tp_cal_done),'value':'1', 'data_type':'float'}
+                        self.mq(self.qt2, Dict)
+                        
+                        # test after cal  -------------------------
+                        self.max_dev = 0
+                        if self.max_dev > self.tp_tolerance:
+                            self.tp_cal_attempts += 1
+                            self.send_web_message('TP calibration failed')
+                        else:
+                            self.tp_cal_attempts = 0
+                            self.send_web_message('TP calibration successful')
+                        if self.tp_cal_attempts >= self.max_cal_attempts:
+                            self.send_web_message('Max number of TP calibration attempts reached')
+                            self.tp_cal_fail = 1
+                        else:
+                            self.send_web_message('Re-attempting TP calibration')            
+
+            # put manifold in normal mode
+            self.meter_manifold_control('run')
+            # take out of hold
+            self.meter_hold_command(0)
+            # TODO generate report            
+
+    def meter_hold_command(self, cmd):
+        # hold on - write - 1 to 11.0.3/9000 as int
+        # hold off - write - 0 to 11.0.3/9000 as int
+        #self.cprint("meter hold command : %s"%cmd)
+        meter_in_hold = None
+        attempts = 0
+        while meter_in_hold != cmd and attempts < 5:
+            # check hold status
+            self.send_web_message("checking meter hold status")
+            self.meter_read_reg(self.meter_reg_hold,'float') # 11.0.3/9000 as int
+            data = self.meter_awaiting_data()
+            reg = data['register']
+            data = data['data']
+            if data != 'timeout' and data != 'error':
+                if int(data) == 1:
+                    meter_in_hold = 1
+                elif int(data) == 0:
+                    meter_in_hold = 0
+                if meter_in_hold == 0 and cmd == 1:
+                    self.send_web_message('Meter not in hold  - attempting hold command')
+                    self.meter_write_reg(self.meter_reg_hold,'float',1)
+                elif meter_in_hold == 0 and cmd == 0:
+                    self.send_web_message('Meter out of hold')
+                elif meter_in_hold == 1 and cmd == 0:
+                    self.send_web_message('Meter in hold  - attempting remove hold command')
+                    self.meter_write_reg(self.meter_reg_hold,'float',0)            
+                elif meter_in_hold == 1 and cmd == 1:
+                    self.send_web_message('Meter is in hold')
+                if meter_in_hold != cmd:
+                    attempts += 1
+            else:
+                attempts += 1
+            if attempts > 4:
+                return 0
+            if meter_in_hold == cmd:
+                return 1
+
+        if meter_in_hold != cmd:
+            if cmd == 1:
+                self.send_web_message('%s attempts to put meter in hold have failed. No more attempts will be made.'%attempts)
+                self.full_test_command(0)
+            if cmd == 0:
+                self.send_web_message('%s attempts to take meter out of hold have failed. No more attempts will be made.'%attempts)
+
+    def meter_manifold_control(self,cmd):
+        if cmd == 'run':
+            self.Mc.m4(0) # protect crystal DP port
+            time.sleep(1)
+            self.Mc.m2(1) # open manifold equalizer
+            time.sleep(1)
+            self.Mc.m5(0) # open rcc eq
+            time.sleep(3)
+            self.Mc.m6(0) # close rcc vent to prepare for nitrogen fill
+            time.sleep(3)
+            self.Mc.m3(1) # energize manifold bottom valves - closes off stream and vents gas
+            time.sleep(3)
+            
+            ''' pre-fill tubing from rcc to manifold with nitrogen -------------------------------'''
+            self.purge_active = 1 # gets set back to 0 in auto_pid after stabilization
+            fill_success = self.full_auto_checks(self.sp_found,'p') # fill with nitrogen and stabilize - then return
+            if fill_success == 0:
+                self.send_web_message("Attempt to pre-fill system with nitrogen failed")
+                return 0
+
+            ''' pre-fill successful - de-energize top manifold valves --------------------------------'''
+            self.Mc.m1(0) # de-energize manifold top valves
+            time.sleep(3)
+            # TODO consider venting isolated nitrogen on rcc ??
+              # maybe best to leave in system - valves in rest state safe for crystal
+            # TODO check for leaks on meter side
+            self.Mc.m3(0) # de-energize manifold bottom valves
+            time.sleep(3)
+            self.Mc.m2(0) # de-energize manifold equalizer
+            
+            return 1
+
+        if cmd == 'purge':
+            self.Mc.m4(0) # protect crystal DP port
+            time.sleep(1)
+            self.Mc.m2(1) # open manifold equalizer
+            time.sleep(1)
+            self.Mc.m5(0) # open rcc eq
+            time.sleep(3)
+            self.Mc.m6(0) # close rcc vent to prepare for nitrogen fill
+            time.sleep(3)
+            self.Mc.m3(1) # energize manifold bottom valves - closes off stream and vents gas
+            time.sleep(3)
+            
+            ''' pre-fill tubing from rcc to manifold with nitrogen'''
+            self.purge_active = 1 # gets set back to 0 in auto_pid after stabilization
+            purge_success_1 = self.full_auto_checks(self.sp_found,'p') # fill with nitrogen and stabilize - then return
+            if purge_success_1 == 0:
+                self.send_web_message("Attempt to pre-fill system with nitrogen for purge failed")
+                return 0
+                
+            ''' initial purge successful continue procedure ---------------------------------'''
+            self.Mc.m1(1) # energize manifold top valves - to allow purge nitrogen in from rcc
+            # pre-fill full test system with nitrogen
+            self.purge_active = 1 # gets set back to 0 in auto_pid after stabilization
+            purge_success_2 = self.full_auto_checks(self.sp_found,'p') # fill with nitrogen and stabilize - then return
+            if purge_success_2 == 0:
+                self.send_web_message("Attempt to fill system with nitrogen for purge failed")
+                return 0
+
+            ''' second purge successful continue procedure ---------------------------------'''
+            self.Mc.m6(1) # vent purge nitrogen / gas mix
+            return 1
+                  
+    def in_to_psi(self,data):
+        return data * 0.036127291827354
+         
+    def meter_read_reg(self, reg, data_type, mode = 'tcp'):
+        if mode == 'tcp':
+            if data_type == 'int': # when reading/writing ints to tflow use a -1 offset e.g. to read/write 9000 use 8999
+                reg = reg - 1
+            #self.cprint("reading register : %s  type : %s"%(reg,data_type))
+            Dict = {"purpose":"meter_read_reg","return_to":"cntrl","register":reg,"data_type":data_type}
+            self.mq(self.qt3,Dict)
+
+    def meter_write_reg(self, reg, data_type, val, mode = 'tcp'):
+        if mode == 'tcp':
+            if data_type == 'int': # when reading/writing ints to tflow use a -1 offset e.g. to read/write 9000 use 8999
+                reg = reg - 1
+            #self.cprint("writing to register : %s  type : %s"%(reg,data_type))
+            Dict = {"purpose":"meter_write_reg","register":reg,"data_type":data_type,"value":val}
+            self.mq(self.qt2,Dict)
+
+    def meter_awaiting_data(self,timeout = 3):
+        st = time.time()
+        data = 'timeout'
+        while (time.time() - st) / 1000 < timeout:
+            self.cprint("awaiting data")
+            self.check_input(0)
+            if self.meter_data_received != None:
+                self.cprint("data received")
+                data = self.meter_data_received
+                self.meter_data_received = None
+                break
+            time.sleep(0.05)
+        self.cprint("data received %s"%data)
+        return data
+            
+    def play_sound(self,data = 'psi_stable'):
+        Dict = {'dest':'play_sound', 'data':data}
+        self.mq(self.qw33, Dict)
+
+    def send_cal_low(self, marker):
+        #self.cprint("1604 send cal low")
+        Dict = {'dest':'send_cal_low', 'data':marker}
+        self.mq(self.qw18, Dict)
+
+    def send_cal_high(self, marker):
+        Dict = {'dest':'send_cal_high', 'data':marker}
+        self.mq(self.qw19, Dict)
+
+    def send_cal_mid(self, marker):
+        Dict = {'dest':'send_cal_mid', 'data':marker}
+        self.mq(self.qw20, Dict)
+
+    def send_web_pid(self, Dict):
+        self.mq(self.qw8, Dict)
+
+    def ping_web(self):
+        Dict = {'dest':'ping_web', 'data':1}
+        self.mq(self.qw10, Dict)
+
+    def ft2(self, data, precision):
+        if precision == 2:
+            return (format(data,'.2f'))
+
+    def cprint(self, msg = ""):
+        if msg != self.prev_msg:
+            print("%s  (ctrl%s)  %s"%(msg,inspect.currentframe().f_back.f_lineno, time.time()))
+            self.prev_msg = msg
+
+    def init_kpv_to_val(self, index = 'init', val = 0):
+        tv = 'int'
+        if len(self.kpv_vars_list) > 0:
+            if index == 'init':
+                for i in range(len(self.kpv_vars_list)):
+                    if str(self.Mc.KpvTypes[self.kpv_index_list[i]]) == 'i':
+                        tv = 'int'
+                    elif str(self.Mc.KpvTypes[self.kpv_index_list[i]]) == 'f':
+                        tv = 'float'
+                    elif str(self.Mc.KpvTypes[self.kpv_index_list[i]]) == 's':
+                        tv = 'str'
+                    exec("self." + self.kpv_vars_list[i] + " = " + tv + "(self.Mc.Kpv[" + str(self.kpv_index_list[i]) + "])")
+            else:
+                index = int(index)
+                fv = -1
+                for i in range(len(self.kpv_index_list)):
+                    if index == self.kpv_index_list[i]:
+                        fv = i
+                        break
+                if str(self.Mc.KpvTypes[index]) == 'i':
+                    tv = 'int'
+                elif str(self.Mc.KpvTypes[index]) == 'f':
+                    tv = 'float'
+                elif str(self.Mc.KpvTypes[index]) == 's':
+                    tv = 'str'
+                if (fv != -1):
+                    if tv == 'str':
+                        val = val.replace("\n","") # remove eol characters
+                        exec("self." + self.kpv_vars_list[fv] + " = str('" + val + "')")
+                    else:
+                        exec("self." + self.kpv_vars_list[fv] + " = " + tv + "(" + str(val) + ")")
+        
+        self.marker_countdown = self.in_count_time
+
+    def check_input(self, val):
+        #self.cprint("cntrl.py running")
+        #print("check input  %s"%format(time.time(),".3f"))
+        #self.cprint("check input")
+        run = 1
+        if self.pid_run == 0 and self.stop_one_shot == 0:
+            #self.cprint("one shot stop")
+            self.stop_one_shot = 1
+            #self.Mc.rest_motors()
+            run = 0
+        ##self.cprint()
+        if self.rdg_fail_count > self.max_rdg_fail and self.pid_run == 1:
+            self.pid_run = 0
+            #self.Mc.rest_motors()
+        #self.cprint()
+
+        if not self.q1.empty():
+            data = self.q1.get()
+            self.Mc.adj_pos = 0
+        #self.cprint()
+        if not self.q2.empty():
+            data = self.q2.get()
+            self.close_inlet()
+        #self.cprint()
+        if not self.q3.empty():
+            data = self.q3.get()
+            self.close_outlet()
+        #self.cprint()
+        if not self.q4.empty():
+            data = self.q4.get()
+            self.init_inlet()
+        #self.cprint()
+        if not self.q5.empty(): # cntrl.py init_outlet
+            data = self.q5.get()
+            self.init_outlet()
+        #self.cprint()
+        if not self.q6.empty():
+            data = self.q6.get()
+            if data['purpose'] == 're_center':
+                self.recenter_cmd(data['data'])
+            elif data['purpose'] == 'stop':
+                self.Mc.s2(0,0)
+        #self.cprint()
+        if not self.q7.empty():
+            data = self.q7.get()
+            d = int(data['data'])
+            self.Mc.s0((d/abs(d))*self.Mc.s0_manual_pw,'m')
+        #self.cprint()
+        if not self.q8.empty():
+            self.cprint('q8 s1 call')
+            data = self.q8.get()
+            d = int(data['data'])
+            self.Mc.s1((d/abs(d))*self.Mc.s1_manual_pw)
+        #self.cprint()
+        if not self.q9.empty(): # high DP alarm - open equalizer
+            data = self.q9.get()
+            self.Mc.equalizer_ctrl(float(data['data']))
+            self.stop_button()
+        #self.cprint()
+        if not self.q10.empty():
+            data = self.q10.get()
+            self.web_run(data['data'])
+        if not self.q11.empty():
+            data = self.q11.get()
+            self.cprint(data)
+            self.Mc.vent_ctrl(float(data['data']))
+        ##self.cprint()
+        if not self.q12.empty():
+            data = self.q12.get()
+            self.eq_alarm(data['data'])
+        #self.cprint()
+        if not self.q13.empty(): # high sp alarm - open vent
+            data = self.q13.get()
+            self.vent_alarm(data['data'])
+            self.stop_button()
+        if not self.q14.empty():
+            data = self.q14.get()
+            self.in_vent_alarm(data['data'])
+        if not self.q15.empty(): # web full auto checks
+            data = self.q15.get()
+            data = data['data']
+            self.full_auto_checks(data['stpt'],data['mode'])
+        if not self.q16.empty(): # full auto checks
+            data = self.q16.get()
+            self.full_auto_checks(data['data'])
+        if not self.q17.empty():
+            data = self.q17.get()
+            self.full_auto_cal(data['data'])
+        if not self.q18.empty():
+            num_next = 0
+            while not self.q18.empty():
+                self.q18.get(True, 0.05)
+                num_next += 1
+            #self.cprint("num_next: %s"%num_next)
+            self.next_pt(num_next)
+        if not self.q19.empty():
+            num_prev = 0
+            while not self.q19.empty():
+                self.q19.get(True, 0.05)
+                num_prev += 1
+            # self.cprint("num_prev: %s"%num_prev)
+            self.prev_pt(num_prev)
+        if not self.q20.empty():
+            data = self.q20.get()
+            self.TP_actual = data['temp']
+        if not self.q21.empty():
+            data = self.q21.get()
+            self.stop_pid(data['data'])
+        if not self.q23.empty():
+            data = self.q23.get()
+        if not self.q24.empty():
+            data = self.q24.get()
+            self.manual_control(data['data'])
+        if not self.q25.empty(): # kpv mod request from another process
+            data = self.q25.get()
+            row = data['row']
+            val = data['val']
+            self.Mc.mod_kpv_file_entry(row, val)
+            self.init_kpv_to_val(row,val)
+            self.Mc.init_kpv_to_val(row,val)
+        if not self.q26.empty(): # rest motors
+            data = self.q26.get()
+            self.check_adj = 0
+            self.Mc.rest_motors()
+        if not self.q27.empty(): # start button
+            data = self.q27.get()
+            self.start_button(data)
+        if not self.q28.empty(): # stop button
+            data = self.q28.get()
+            self.stop_button()
+        if not self.q29.empty(): # pause button
+            data = self.q29.get()
+            self.pause_button(int(data['data']))
+        if not self.q30.empty(): # zero inlet
+            data = self.q30.get()
+            self.zero_inlet(int(data['data']))
+        if not self.q31.empty(): # zero outlet
+            data = self.q31.get()
+            self.zero_outlet(int(data['data']))
+        if not self.q32.empty(): # heartbeat received
+            data = self.q32.get()
+            self.hb_st = time.time() # reset heartbeat timer
+            if self.hb_restarts > 0:
+                None
+                #self.cprint("Program restart successful")
+            self.hb_restarts = 0
+            #self.cprint("hb:%s"%data['data'])
+        if not self.q34.empty(): # ROC button
+            self.cprint("Number of markers modified")
+            data = self.q34.get()
+            self.unit_type = int(data['data'])
+            if self.unit_type == 0:
+                self.cprint("Number of markers set to 2")
+                self.num_markers = 2
+                self.Mc.num_markers = 2
+                self.Mc.mod_kpv_file_entry(246,0)
+                self.Mc.mod_kpv_file_entry(131,2)
+            if self.unit_type == 1:
+                self.cprint("Number of markers set to 1")
+                self.num_markers = 1                
+                self.Mc.num_markers = 1                                
+                self.Mc.mod_kpv_file_entry(246,1)
+                self.Mc.mod_kpv_file_entry(131,1)
+            #print("unit_type : %s", self.unit_type)
+            print("self.num_markers : %s", self.num_markers)
+            print("self.Mc.num_markers : %s", self.Mc.num_markers)
+        if not self.q36.empty(): # web command to send a marker via comm
+            data = self.q36.get()
+            data = data['data']
+            self.send_marker(data)
+        if not self.q37.empty(): # # full test (SPDPTP auto)
+            data = self.q37.get()
+            data = int(data['data'])
+            self.full_test_command(data)
+        if not self.q38.empty(): # returned data from meter_read_reg
+            data = self.q38.get()
+            self.meter_data_received = data            
+            
+        # settings.py queue
+        if not self.qk1.empty(): # request from web for kpv file
+            data = self.qk1.get()
+            self.Mc.get_kpv_file()
+            self.Mc.send_kpv('init_web')
+        if not self.qk3.empty(): # change made to kpv on web
+            data = self.qk3.get()
+            data = data['data']
+            row = int(data['row'])
+            #self.cprint(row)
+            dtype = self.Mc.KpvTypes[row]
+            if dtype == 'i':
+                val = int(data['val'])
+            elif dtype == 'f':
+                val = float(data['val'])
+            elif dtype == 's':
+                val = str(data['val']).replace("\n","")
+            else:
+                self.cprint("Bad data type imported from web settings page")
+            self.cprint("Change made to web Kpv[%s]  old : %s  new : %s  type : %s"%(row, self.Mc.Kpv[row],val,type(val)))                
+            #self.cprint("cntrl.py 1569  row : %s   val : %s"%(row, val))
+            self.Mc.mod_kpv_file_entry(row, val)
+            self.init_kpv_to_val(row,val)
+            self.Mc.init_kpv_to_val(row,val)
+
+        # tflow read to cntrl.py
+        if not self.qt5.empty():
+            data = self.qt5.get()
+            self.meter_DP_actual = data['tflow_in_num']
+            self.meter_SP_actual = data['tflow_psi_num']
+            self.meter_TP_actual = data['tflow_temp']
+            
+        # motor_current.py queue
+        if not self.qm7.empty():
+            self.Mc.Kpv = self.qm7.get()
+
+        # message_log
+        if not self.qw12.empty():
+            #self.cprint("here")
+            data = self.qw12.get()
+            msg = data['data']
+            #self.cprint(msg)
+            #self.save_msg_log(msg)
+
+        # re-center command from cntrl.py
+        if not self.q39.empty():
+            data = self.q39.get()
+            direction = data['direction']
+            if direction == 'out':
+                self.Mc.s2(self.Mc.s2_down_spd,self.Mc.adjuster_runout)
+            elif direction == 'in':
+                self.Mc.s2(self.Mc.s2_up_spd,self.Mc.adjuster_runout)
+
+        # baro psi for cntrl.py
+        if not self.qb2.empty():
+            data = self.qb2.get()
+            self.baro_psi = float(data['baro_psi'])
+            
+        return run
+
+    def check_next_pt(self):
+        np = 0
+        #self.cprint("in check next")
+        self.check_input(0)
+        if self.next_point != 0:
+            np = self.next_point
+            #self.cprint("np : %s"%np)
+            self.next_point = 0
+        return np
+
+    def check_prev_pt(self):
+        pp = 0
+        #self.cprint("in check prev")
+        self.check_input(0)
+        if self.prev_point != 0:
+            #self.cprint("1690 check prev")
+            pp = self.prev_point
+            self.prev_point = 0
+        return pp
+
+    def mq(self, q, val, block = False, timeout = 0.05): # verify queue transmission
+        if block == 1:
+            block = True
+        try:
+            self.q = q
+            try:
+                while self.q.full():
+                    self.q.get(block, timeout)
+            except:
+                None
+            else:
+                try:
+                    self.q.put(val, block, timeout)
+                except:
+                    None
+        except:
+            None
+
+    def run(self):
+        #self.cprint("cntrl.py running")
+        self.Mc = Pid_class(self.q24, self.q25, self.q26, self.q28, self.qw3, self.qw4, self.qw11, self.qw12, self.qw13, self.qw14, self.qw15, \
+        self.qw16, self.qw21, self.qw22, self.qw23, self.qw24, self.qw25, self.qw26, self.qw27, self.qw28, \
+        self.qw29, self.qw30, self.qw31, self.qw32, self.qw33, self.qw34, self.qw35, self.qw36, self.qw37,\
+        self.qw38, self.qw39, self.qw40, self.qm1, self.qm2, self.qm3, self.qm4, self.qm6, self.qm7, self.qs1, \
+        self.qs2, self.qs3, self.qs9, self.qs10, self.qs11, self.qk2, self.qk4, self.qt4, self.qb1, self.qb3, self.qa1, self.qa2, self.qa3, \
+        self.qu1, self.qu3, self.qts1, self.qv3, self.qd1, self.qd2)  # pid object
+
+        self.Mc.get_kpv_file()
+        self.Mc.print_duty()
+        while len(self.Mc.Kpv) == 0:
+            #self.cprint("waiting %s"%time.time())
+            None
+        self.init_kpv_to_val('init')
+        self.Mc.rest_motors()
+
+        self.check_input(0)
+        while True: #self.pid_run == 0:
+            try:
+                #print("cntrl.py  %s"%time.time())
+                if time.time() - self.save_st > self.save_dt:
+                    self.save_st = time.time()
+                    self.save_all(0)
+                    #if abs(self.Mc.adj_pos) > self.adj_max_pos + 200:
+                    #    self.cprint("Adjuster max position reached")
+                    #    self.send_web_message("Adjuster max position reached")
+                    #    self.Mc.center_in_adjuster()
+                if time.time() - self.ck_hb_st > 1: # check every second
+                    self.check_heartbeat();
+                    self.ck_hb_st = time.time()
+                if self.web_running == 0 and time.time() - self.initial_web_update_st > self.web_dt:
+                    self.initial_web_update_st = time.time()
+                    self.ping_web() # see if ui is connected yet
+
+                else:
+                    None
+                self.check_input(0)
+            except:
+                raise
+            time.sleep(0.05)
+        time.sleep(0.05)
+
+
+
+class Pid_class(Controls): # pid class
+
+    def __init__(self, q24, q25, q26, q28, qw3, qw4, qw11, qw12, qw13, qw14, qw15, qw16, qw21, qw22, qw23, \
+                       qw24, qw25, qw26, qw27, qw28, qw29, qw30, qw31, qw32, qw33, qw34, \
+                       qw35, qw36, qw37, qw38, qw39, qw40, qm1, qm2, qm3, qm4, qm6, qm7, qs1, \
+                       qs2, qs3, qs9, qs10, qs11, qk2, qk4, qt4, qb1, qb3, qa1, qa2, qa3, qu1, qu3, qts1, qv3, \
+                       qd1, qd2):
+
+
+        self.kpv_vars_list = ['s0_Kp_psi',            's0_Ki_psi',           's0_Kd_psi',            's1_Kp_psi',           \
+                              's1_Ki_psi',            's1_Kd_psi',           's2_Kp_psi',            's2_Ki_psi',           \
+                              's2_Kd_psi',            'm3_Kp',               'm3_Ki',                'm3_Kd',               \
+                              'm4_Kp',                'm4_Ki',               'm4_Kd',                'adjuster_runout',     \
+                              'adj_min_move_amp',     's0_min_angle_in',     's0_manual_pw',         's0_move_min',         \
+                              's0_move_close_max',    's0_move_open_max',    's0_max_intg_psi',      's0_soak',             \
+                              's0_min_angle_psi',     's0_max_angle',        's0_pw_holdoff',        's0_intg_holdoff_psi', \
+                              's0_default_angle',     's0_init_angle_psi',   's0_init_angle_in',     's0_intg_holdoff_in',  \
+                              's0_max_intg_in',       's1_move_min',         's1_move_close_max',    's1_max_intg_psi',     \
+                              's1_soak',              's1_min_angle',        's1_max_angle',         's1_pw_holdoff',       \
+                              's1_move_open_max_psi', 's1_default_angle',    's1_init_angle_psi',    's1_move_open_max_in', \
+                              's1_init_angle_in',     's1_manual_pw',        's1_intg_holdoff_psi',  's1_intg_holdoff_in',  \
+                              's2_min',               's2_max',              's2_max_intg_psi',      's2_soak',             \
+                              's2_intg_holdoff_psi',  's2_intg_holdoff_in',  's2_max_intg_in',       's2_up_spd',           \
+                              's2_down_spd',          's2_up_spd_max',       's2_down_spd_min',      's2_up_spd_min',       \
+                              's2_down_spd_max',      'm2_level',            'm3_min',               'm3_max',              \
+                              'm3_max_intg',          'm3_soak',             'm3_level',             'm3_manual_pw',        \
+                              'm2_min',               'm2_max',              'm4_soak',                                     \
+                              'm4_level_min',         'm4_level_max',        'm4_off_delay',         'm5_min',              \
+                              'm5_max',               'm6_min',              'm6_max',               'num_markers',         \
+                              'avg_pw_count',         'cycles_per_div_ST',   'cycles_per_div_LT',    's0_Kp_in',            \
+                              's0_Ki_in',             's0_Kd_in',            's1_Kp_in',             's1_Ki_in',            \
+                              's1_Kd_in',             's2_Kp_in',            's2_Ki_in',             's2_Kd_in'  ]
+
+        self.kpv_index_list = [  0,   1,   2,   4,
+                                 5,   6,   8,   9,
+                                 10,  12,  13,  14,
+                                 16,  17,  18,  25,
+                                 26,  32,  33,  34,
+                                 35,  36,  37,  38,
+                                 39,  40,  41,  42,
+                                 43,  44,  45,  46,
+                                 47,  49,  50,  51,
+                                 52,  53,  54,  55,
+                                 56,  57,  58,  59,
+                                 60,  61,  63,  64,
+                                 69,  70,  71,  72,
+                                 73,  74,  75,  76,
+                                 77,  78,  79,  80,
+                                 81,  87,  92,  93,
+                                 94,  95,  96,  97,
+                                 102, 103, 105,
+                                 107, 108, 111, 116,
+                                 117, 124, 125, 131,
+                                 156, 158, 161, 292,
+                                 293, 294, 295, 296,
+                                 297, 298, 299, 300  ]
+                                 
+        self.KpvTypes = []
+        self.q24 = q24 # web manual_control
+        self.q25 = q25 # send kpv from py processes to cntrl.py
+        self.q26 = q26 # rest motors
+        self.q28 = q28 # stop button
+
+        self.qw4 = qw4 # NA
+        self.qw3 = qw3 # inlet_display
+        self.qw11 = qw11 # in_vent_status
+        self.qw12 = qw12 # vent_status
+        self.qw13 = qw13 # eq_status
+        self.qw14 = qw14 # outlet_status
+        self.qw15 = qw15 # adj_pos_display
+        self.qw16 = qw16 # stpt_display
+        self.qw21 = qw21 # send_web_message for cntrl.py
+        self.qw23 = qw23 # send_web_message for serialworker.py
+        self.qw24 = qw24 # btn_status
+        self.qw25 = qw25 # pid_running_status
+        self.qw26 = qw26 # NA
+        self.qw27 = qw27 # disable clear crystal alarm button
+        self.qw28 = qw28 # NA
+        self.qw29 = qw29 # NA
+        self.qw30 = qw30 # NA
+        self.qw31 = qw31 # send_web_message for tflow_tcp.py
+        self.qw32 = qw32 # NA
+        self.qw33 = qw33 # sounds
+        self.qw34 = qw34 # next/prev button enable/disable
+        self.qw35 = qw35 # send_web_message for analog_in.py
+        self.qw36 = qw36 # NA
+        self.qw37 = qw37 # NA
+        self.qw38 = qw38 # NA
+        self.qw39 = qw39 # NA
+        self.qw40 = qw40 # NA
+
+        self.qm1 = qm1
+        self.qm2 = qm2
+        self.qm3 = qm3 # motor_current.py re-center active
+        self.qm6 = qm6 # send kpv list to motor_current.py
+        self.qm4 = qm4
+        self.qs1 = qs1
+        self.qs2 = qs2
+        self.qs3 = qs3
+        self.qs9 = qs9 # send auto_pid mode to serialworker
+        self.qs10 = qs10
+        self.qs11 = qs11 # serial worker dp high during SP testing
+        self.qts1 = qts1 # send kpv list to tflow_serial.py
+
+        self.qk2 = qk2
+        self.qk4 = qk4 # change made to kpv update web
+
+        self.qt4 = qt4 # send kpv file to tflow_data.py
+
+        self.qb1 = qb1 # ??
+        self.qb3 = qb3 # send kpv file to baro_data.py
+        
+        self.qa1 = qa1 # send kpv file to analog_in.py
+        self.qa2 = qa2 # send adjuster position to analog_in.py
+        self.qa3 = qa3  # re-center complete from cntrl.py
+        
+        self.qu1 = qu1 # ??
+        self.qu3 = qu3 # send kpv file to usb485.py        
+        
+        self.qts1 = qts1 # send kpv list to tflow_serial.py
+
+        self.qv3  = qv3 # kpv for activity.py
+        
+        self.qd1 = qd1 # write to db
+        self.qd2 = qd2 # read from db
+
+        self.prev_msg = ""
+        self.Kpv = []
+        self.KpvTypes = [] # array to hold 'types' of data in Kpv
+
+        self.get_kpv_file()
+        self.init_kpv_to_val('init')
+        self.send_kpv('init')
+
+        self.web_prev_msg = ""
+        self.prev_msg = ""
+
+        self.adjuster_direction = 0
+
+        self.avg_pw_array = []
+        for i in range(int(self.avg_pw_count)): # set up derivative average array
+            self.avg_pw_array.append(0)
+        self.avg_pw = sum(self.avg_pw_array) / len(self.avg_pw_array) # average derivative ofer a number of cycles
+
+        self.get_adj_pos_value()
+        self.prev_adj_pos = 0
+        
+        self.inhibit_up = 0
+        self.inhibit_down = 0
+        
+                            
+    def get_kpv_file(self):
+        self.Kpv = []
+        self.KpvTypes = []
+        self.KpvTags = []
+        try:
+            self.dbq_kpv_tags = db.get("SELECT * FROM kpv where user = 'tags'")
+        except:
+            cprint("kpv tags database did not read in")
+        else:
+            try:
+                self.dbq_kpv_vals = db.get("SELECT * FROM kpv where user = 'default_user'")
+            except:
+                cprint("kpv vals database did not read in")
+            else:
+                for i in range(len(self.dbq_kpv_tags)-1):
+                    fullstr = str(self.dbq_kpv_tags['row' + str(i)])
+                    self.KpvTypes.append(str(fullstr[1]))
+                    self.KpvTags.append(fullstr[3:len(fullstr)])
+                    val = self.dbq_kpv_vals['row' + str(i)]
+                    dtype = self.KpvTypes[i]
+                    if dtype == 'i':
+                        self.Kpv.append(int(val))
+                    elif dtype == 'f':
+                        self.Kpv.append(float(val))
+                    elif dtype == 's':
+                        self.Kpv.append(str(val))
+                    else:
+                        self.cprint("Unknown data type imported from Kpv database")
+                    #print("[%s]{%s}(%s) : %s"%(i,self.KpvTags[i],self.KpvTypes[i],self.Kpv[i]))
+
+    def mod_kpv_file_entry(self, index, val):
+        #self.cprint("mod kpv file entry ([%s]:%s)1864"%(index,val))
+        db.execute("update kpv set `row" + str(index) + "` = '" + str(val) + "' where user = 'default_user';")
+        self.Kpv[index] = val # update local process kpv entry
+        self.send_kpv(index, val) # send new kpv to web and processes
+
+    def send_kpv(self, index = 0, val = 0): # send kpv settings to web settings page
+        #self.cprint("send_kpv  index : %s  val : %s"%(index,val))
+        if index == 'init_web':
+            self.mq(self.qk2,  [self.Kpv, self.KpvTypes, self.KpvTags]) # send kpv to web
+        elif index == 'init':
+            self.mq(self.qs10, [self.Kpv, self.KpvTypes]) # update kpv in serialworker.py
+            self.mq(self.qt4,  [self.Kpv, self.KpvTypes]) # update kpv in tflow_data.py
+            self.mq(self.qts1, [self.Kpv, self.KpvTypes]) # update kpv in tflow_serial.py
+            self.mq(self.qb3,  [self.Kpv, self.KpvTypes]) # update kpv in baro_data.py
+            self.mq(self.qm6,  [self.Kpv, self.KpvTypes]) # update kpv in motor_current.py
+            self.mq(self.qa1,  [self.Kpv, self.KpvTypes]) # update kpv in analog_in.py
+            self.mq(self.qu3,  [self.Kpv, self.KpvTypes]) # update kpv in usb485.py
+            self.mq(self.qv3,  [self.Kpv, self.KpvTypes]) # update kpv in activity.py
+        else:
+            self.mq(self.qk4,  [index,val]) # change made to kpv - update web
+            self.mq(self.qs10, [index,val]) # update kpv in serialworker.py
+            self.mq(self.qt4,  [index,val]) # update kpv in tflow_data.py
+            self.mq(self.qts1, [index,val]) # update kpv in tflow_serial.py
+            self.mq(self.qb3,  [index,val]) # update kpv in baro_data.py
+            self.mq(self.qm6,  [index,val]) # update kpv in motor_current.py
+            self.mq(self.qa1,  [index,val]) # update kpv in analog_in.py
+            self.mq(self.qu3,  [index,val]) # update kpv in usb485.py
+            self.mq(self.qv3,  [index,val]) # update kpv in activity.py
+
+    def init_kpv_to_val(self, index = 'init', val = 0):
+        tv = 'int'
+        if len(self.kpv_vars_list) > 0:
+            if index == 'init':
+                for i in range(len(self.kpv_vars_list)):
+                    if str(self.KpvTypes[self.kpv_index_list[i]]) == 'i':
+                        tv = 'int'
+                    elif str(self.KpvTypes[self.kpv_index_list[i]]) == 'f':
+                        tv = 'float'
+                    elif str(self.KpvTypes[self.kpv_index_list[i]]) == 's':
+                        tv = 'str'                                        
+                    exec("self." + self.kpv_vars_list[i] + " = " + tv + "(self.Kpv[" + str(self.kpv_index_list[i]) + "])")
+            else:
+                index = int(index)
+                fv = -1
+                for i in range(len(self.kpv_index_list)):
+                    if index == self.kpv_index_list[i]:
+                        fv = i
+                        break
+                if str(self.KpvTypes[index]) == 'i':
+                    tv = 'int'
+                elif str(self.KpvTypes[index]) == 'f':
+                    tv = 'float'
+                elif str(self.KpvTypes[index]) == 's':
+                    tv = 'str'
+                if (fv != -1):                           
+                    exec("self." + self.kpv_vars_list[fv] + " = " + tv + "(" + str(val) + ")")
+
+        self.m3_rng = self.m3_max - self.m3_min
+        self.m3_soak_scaled = self.m3_soak
+        self.m3_pw = self.m3_min
+        self.m4_max = self.m2_max
+        self.m4_min = self.m2_min 
+        self.m4_rng = self.m4_max - self.m4_min
+        self.m4_soak_scaled = self.m4_soak
+        self.m4_soak_default = self.m4_soak
+        self.m4_level_rng = self.m4_level_max - self.m4_level_min
+        self.m4_pw = self.m4_min
+        self.m5_rng = self.m5_max - self.m5_min
+        self.m6_rng = self.m6_max - self.m6_min
+        self.s0_angle_range = self.s0_max_angle - self.s0_min_angle_psi
+        self.s0_move_close_range = self.s0_move_close_max - self.s0_move_min
+        self.s0_move_open_range = self.s0_move_open_max - self.s0_move_min
+        self.s0_prev_angle = 0
+        self.s0_max_angle_prev = self.s0_max_angle
+        self.s1_move_close_range = self.s1_move_close_max - self.s1_move_min
+        self.s1_move_open_range_psi = self.s1_move_open_max_psi - self.s1_move_min
+        self.s1_move_open_range_in = self.s1_move_open_max_in - self.s1_move_min
+        self.s1_prev_angle = 0
+        self.s1_max_intg_in = self.s1_max_intg_psi
+        self.s1_max_angle_prev = self.s1_max_angle
+        self.s2_soak_scaled = self.s2_soak
+        self.s2_rng = self.s2_max - self.s2_min
+        self.s2_pw = self.s2_min
+        self.s2_nonstop = self.m3_manual_pw
+                
+        self.prev_eq_status = -1
+        self.prev_vent_status = -1
+        self.prev_in_vent_status = -1
+
+        self.cycle_reset_time_ST = self.cycles_per_div_ST
+        self.cycle_reset_time_LT = self.cycles_per_div_LT
+        
+    def cprint(self, msg = ""):
+        if msg != self.prev_msg:
+            print("%s  (ctrl%s)  %s"%(msg,inspect.currentframe().f_back.f_lineno,time.time()))
+            self.prev_msg = msg
+
+    def center_in_adjuster(self):
+        #self.cprint("center_in_adjuster")
+        if self.adj_pos > 0:
+            spd = self.s2_down_spd
+        else:
+            spd = self.s2_up_spd
+        move = abs(self.adj_pos)
+        if move > self.adjuster_runout:
+            move = self.adjuster_runout;
+        self.s2(spd, move)
+        super().set_rough_fine(0) # switch to rough
+
+    def check_ma(self):
+        #getframe_expr = 'sys._getframe({}).f_code.co_name'
+        #self.cprint("check_ma called by %s"%eval(getframe_expr.format(2)))        
+        cont = 1
+        if not self.qm4.empty():
+            try:
+                data = self.qm4.get()
+                if data['purpose'] == 'stop':
+                    self.rest_motors()
+                    send_web_message("Max ma - Adjuster  stopped")
+                    cont = 0
+                    return cont
+                if data['purpose'] == 'inhibit_up':
+                    self.inhibit_up = int(data['data'])
+                if data['purpose'] == 'inhibit_down':
+                    self.inhibit_down = int(data['data'])
+            except:
+                self.cprint("exception at check_ma")
+                cont = 0
+                return cont
+        return cont
+        
+    def check_stop(self):
+        if not self.q28.empty():
+            return False
+        else:
+            return True
+        
+    def get_adj_pos_value(self):
+        self.get_kpv_file()
+        self.adj_pos = float(self.Kpv[82])
+
+    def m1(self, spd): # manifold_top
+        if spd == 0:
+            spd = None
+        kit.motor1.throttle = spd
+        
+    def m2(self, spd): # manifold_equalize
+        if spd == 0:
+            spd = None
+        kit.motor1.throttle = spd
+
+    def m3(self, spd): # manifold_bottom
+        if spd == 0:
+            spd = None
+        kit.motor1.throttle = spd
+
+    def m4(self, spd): # expose crystal DP port
+        if spd == 0:
+            spd = None
+        kit.motor1.throttle = spd
+        
+    def m5(self, spd): # equalizer
+        #self.cprint("equalizer called by %s"%eval(getframe_expr.format(2)))
+        if spd == 0 or spd == None:
+            self.web_btn_status('open_eq','1')
+        else:
+            self.web_btn_status('close_eq','1')
+        if spd == 0 or spd == None:
+            spd = 0
+        p_kit.motor1.throttle = spd
+        # eq status for serialworker
+        Dict = {'dest':'qs1', 'purpose':'eq_status', 'data':self.get_pwm_state(5,1)}
+        self.mq(self.qs1, Dict)
+
+    def m6(self, spd): # psi vent
+        #self.cprint("psi vent called by %s"%eval(getframe_expr.format(2)))
+        if spd == 0 or spd == None:
+            self.web_btn_status('close_vent','1')
+        else:
+            self.web_btn_status('open_vent','1')
+        p_kit.motor2.throttle = spd
+        # psi vent status for serialworker
+        Dict = {'dest':'qs2', 'purpose':'vent_status', 'data':self.get_pwm_state(6,1)}
+        self.mq(self.qs2,Dict)
+
+    def m7(self, spd): # NA
+        if spd == 0:
+            spd = None
+        kit.motor1.throttle = spd
+
+    def m8(self, spd): # NA
+        if spd == 0:
+            spd = None
+        kit.motor1.throttle = spd                
+
+    def s0(self, angle, mode='i'): # inlet servo
+        getframe_expr = 'sys._getframe({}).f_code.co_name'
+        #print("s0 called by %s"%eval(getframe_expr.format(2)))
+        if mode == 'p' or mode == 'm':
+            min_angle = self.s0_min_angle_psi
+        elif mode == 'i':
+            min_angle = self.s0_min_angle_in
+        if angle  < 0:
+            self.web_btn_status('inlet_bump_up','1')
+        elif angle  > 0:
+            self.web_btn_status('inlet_bump_down','1')
+        fpos = s_kit.servo[0].angle + angle
+        if fpos > self.s0_max_angle:
+            self.s0_commanded = self.s0_max_angle
+            #s_kit.servo[0].angle = self.s0_max_angle
+        elif fpos < min_angle:
+            self.s0_commanded = min_angle
+            #s_kit.servo[0].angle = min_angle
+        else:
+            self.s0_commanded = fpos
+            #s_kit.servo[0].angle = fpos
+            
+        # set servo position
+        s_kit.servo[0].angle = self.s0_commanded
+        
+        if angle  < 0:
+            self.web_btn_status('inlet_bump_up','0')
+        elif angle  > 0:
+            self.web_btn_status('inlet_bump_down','0')
+        # web inlet position display
+        state = s_kit.servo[0].angle
+        Dict = {'dest':'inlet_display', 'inlet_angle':str(int(state))}
+        self.mq(self.qw3, Dict)
+
+    def s1(self, angle): # outlet servo
+        #self.cprint("s1 called by %s"%eval(getframe_expr.format(2)))
+        #self.cprint('s1 angle called : %s'%angle)
+        if angle  < 0:
+            self.web_btn_status('outlet_bump_up','1')
+        elif angle  > 0:
+            self.web_btn_status('outlet_bump_down','1')
+        #fpos = s_kit.servo[1].angle + angle
+        fpos = s_kit.servo[3].angle + angle
+        #self.cprint(fpos)
+        if fpos > self.s1_max_angle:
+            self.s1_commanded = self.s1_max_angle
+            #s_kit.servo[1].angle = self.s1_max_angle
+            #s_kit.servo[3].angle = self.s1_max_angle
+        elif fpos < self.s1_min_angle:
+            self.s1_commanded = self.s1_min_angle
+            #s_kit.servo[1].angle = self.s1_min_angle
+            #s_kit.servo[3].angle = self.s1_min_angle
+        else:
+            self.s1_commanded = fpos
+            #s_kit.servo[1].angle = fpos
+            #s_kit.servo[3].angle = fpos
+        if angle  < 0:
+            self.web_btn_status('outlet_bump_up','0')
+        elif angle  > 0:
+            self.web_btn_status('outlet_bump_down','0')
+
+        # set servo position
+        #s_kit.servo[1].angle = self.s1_commanded
+        s_kit.servo[3].angle = self.s1_commanded
+                    
+        # web outlet position display
+        #state = s_kit.servo[1].angle
+        state = s_kit.servo[3].angle
+        #self.cprint(state)
+        Dict = {'dest':'outlet_display', 'outlet_angle':str(int(state))}
+        self.mq(self.qw14, Dict)
+
+    def s2(self, spd, pw): # adjuster continuous servo
+        #self.cprint("s2 pw : %s"%pw)
+        #self.cprint("s2 spd : %s"%spd)
+        #getframe_expr = 'sys._getframe({}).f_code.co_name'
+        #self.cprint("s2 called by %s"%eval(getframe_expr.format(2)))
+        btn_on = 0
+        if spd == 0 or spd == None: #allows for soak time
+            pass
+        if pw <0:
+            pw = 0
+        if pw > self.adjuster_runout:
+            pw = self.adjuster_runout
+        self.prev_adjuster_direction = self.adjuster_direction
+        if spd != None and spd != 0:
+            btn_on = 1
+            if spd > 0:
+                self.web_btn_status('fine_up','1')
+            elif spd < 0:
+                self.web_btn_status('fine_down','1')
+            else:
+                self.web_btn_status('fine_up','0')
+                self.web_btn_status('fine_down','0')
+        cl = 1
+        ca = 1
+        if spd > 0 and self.inhibit_up == 1 or \
+           spd < 0 and self.inhibit_down == 1:
+            spd = 0
+            cl = 0
+        s_kit.continuous_servo[2].throttle = spd      
+        if spd != None and spd != 0:
+            self.adjuster_direction = (spd/abs(spd))
+            self.mq(self.qm1, self.adjuster_direction)        
+        st = time.time()
+        while cl == 1:
+            dt = time.time() - st
+            cl = self.check_ma()
+            if cl == 1:
+                cl = self.check_stop()
+            if cl == False:
+                ca = 0
+                break
+            if dt > pw / 1000:
+                cl = 0
+                break
+        s_kit.continuous_servo[2].throttle = 0
+        if btn_on == 1:
+            if spd > 0:
+                self.web_btn_status('fine_up','0')
+            elif spd < 0:
+                self.web_btn_status('fine_down','0')
+
+        if spd != None and spd != 0:
+            if pw != self.adjuster_runout:
+                self.adj_pos = self.adj_pos + ((spd/abs(spd)) * ((time.time() - st) * 1000))
+                self.update_adj_pos_display()
+            else:
+                self.adj_pos = 0
+                self.update_adj_pos_display()
+                self.mq(self.qm3, 0) # motor_current.py re-center active
+                self.mq(self.qa3,{'purpose':'re_center_complete'}) # re-center complete for analog_in.py
+                self.mq(self.q24,{'data':'0'}) # if adjuster was manually set to run continuously, stop after re-center
+        else:
+            None
+            #self.adjuster_direction = 0
+        self.mq(self.qm2, self.adj_pos) # send adjuster position to motor_current.py
+        self.mq(self.qa2, {'position':self.adj_pos,'direction':self.adjuster_direction}) # send adjuster position to analog_in.py
+        return ca
+
+    def rest_motors(self):
+        #getframe_expr = 'sys._getframe({}).f_code.co_name'
+        #self.cprint("rest_motors called by %s"%eval(getframe_expr.format(2)))
+        self.m5(None)
+        self.m6(None)
+        self.s0(self.s0_max_angle)
+        #self.cprint('close s1 called in rest motors : %s'%self.s1_max_angle)
+        self.s1(self.s1_max_angle)
+        self.s2(0,0)
+
+    def equalizer_ctrl(self, val):
+        if val == 1: # close the equalizer
+            self.m5(0.9)
+        else:
+            self.m5(None)
+
+    def vent_ctrl(self, val): # psi vent
+        if val == 1:
+            self.m6(1)
+        elif val == 0:
+            self.m6(None)
+
+    def web_btn_status(self,btn,state):
+        Dict = {'dest':'btn_status','btn':btn,'state':state}
+        self.mq(self.qw24,Dict)
+               
+        
+    def send_web_message(self, var):
+        if var != self.web_prev_msg:
+            Dict = {'dest':'web_message', 'val':var}
+            self.qw21.put(Dict)
+            self.web_prev_msg = var
+
+    def init_web_valve_states(self): # show correct state of buttons on web
+        st = self.get_pwm_state(5)
+        if st == None or st == 0:
+            self.web_btn_status('open_eq','1')          
+        else:
+            self.web_btn_status('close_eq','1')
+
+        st = self.get_pwm_state(6)
+        if st == None or st == 0:
+            self.web_btn_status('close_vent','1')            
+        else:
+            self.web_btn_status('open_vent','1')
+
+    def get_pwm_state(self,m, rv = 0):
+        # get duty_cycle from pwm pins
+        if m == 1 or m == 5:
+            p1 = 9
+            p2 = 10
+            if m == 1:
+                p1 = kit._pca.channels[p1].duty_cycle
+                p2 = kit._pca.channels[p2].duty_cycle
+            elif m == 5:
+                p1 = p_kit._pca.channels[p1].duty_cycle
+                p2 = p_kit._pca.channels[p2].duty_cycle
+        elif m == 2 or m == 6:
+            p1 = 11
+            p2 = 12
+            if m == 2:
+                p1 = kit._pca.channels[p1].duty_cycle
+                p2 = kit._pca.channels[p2].duty_cycle
+            elif m == 6:
+                p1 = p_kit._pca.channels[p1].duty_cycle
+                p2 = p_kit._pca.channels[p2].duty_cycle
+        elif m == 3 or m == 7:
+            p1 = 3
+            p2 = 4
+            if m == 3:
+                p1 = kit._pca.channels[p1].duty_cycle
+                p2 = kit._pca.channels[p2].duty_cycle
+            elif m == 7:
+                p1 = p_kit._pca.channels[p1].duty_cycle
+                p2 = p_kit._pca.channels[p2].duty_cycle
+        elif m == 4 or m == 8:
+            p1 = 5
+            p2 = 6
+            if m == 4:
+                p1 = kit._pca.channels[p1].duty_cycle
+                p2 = kit._pca.channels[p2].duty_cycle
+            elif m == 8:
+                p1 = p_kit._pca.channels[p1].duty_cycle
+                p2 = p_kit._pca.channels[p2].duty_cycle
+        else:
+            return(0)
+
+        # determine pwm direction
+        if p1 == p2 == 0: # None
+            if rv != 0:
+                return 0
+            else:
+                return None
+        elif p1 > 0 and p2 > 0: # 0
+            return(0)
+        elif p1 == 0 and p2 > 0:
+            if rv != 0:
+                return 1
+            else:
+                return(-1)
+        elif p1 > 0 and p2 == 0:
+            return(1)
+
+    def print_duty(self):
+        None
+        #self.cprint("\n")
+        #print("m1 dir : %s\n"%self.get_pwm_state(1))
+        #print("m2 dir : %s\n"%self.get_pwm_state(2))
+        #print("m3 dir : %s\n"%self.get_pwm_state(3))
+        #print("m4 dir : %s\n"%self.get_pwm_state(4))
+        #print("m5 dir : %s\n"%self.get_pwm_state(5))
+        #print("m6 dir : %s\n"%self.get_pwm_state(6))
+        #print("m7 dir : %s\n"%self.get_pwm_state(7))
+        #print("m8 dir : %s\n"%self.get_pwm_state(8))
+
+    def update_adj_pos_display(self):
+        if abs(self.adj_pos - self.prev_adj_pos) > 50:
+            Dict = {'dest':'adj_pos_display', 'adj_pos':str(int(self.adj_pos))}
+            self.mq(self.qw15, Dict)
+            self.prev_adj_pos = self.adj_pos
+            self.mod_kpv_file_entry(82, self.adj_pos)
+
+    def mq(self, q, val, block = False, timeout = 0.05): # verify queue transmission
+        if block == 1:
+            block = True
+        try:
+            self.q = q
+            try:
+                while self.q.full():
+                    self.q.get(block, timeout)
+            except:
+                None
+            else:
+                try:
+                    self.q.put(val, block, timeout)
+                except:
+                    None
+        except:
+            None

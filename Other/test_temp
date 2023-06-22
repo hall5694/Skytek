@@ -1,0 +1,18 @@
+#!/usr/bin/python3
+import time
+import board
+import busio
+import adafruit_ina260
+from adafruit_motorkit import MotorKit
+
+i2c = busio.I2C(board.SCL, board.SDA)
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
+ads = ADS.ADS1115(i2c, address=0x48)
+chan = AnalogIn(ads, ADS.P0)
+
+sleep_time = 0.2
+
+for i in range(0,100):
+    print(chan.value, chan.voltage)
+    time.sleep(sleep_time)

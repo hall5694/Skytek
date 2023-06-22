@@ -1,0 +1,2426 @@
+#!/usr/bin/python3
+import sys
+import time
+import threading
+import queue
+import multiprocessing
+import serial
+import board
+import busio
+import adafruit_ina260
+import math
+import inspect
+from collections import OrderedDict
+import shutil
+
+#getframe_expr = 'sys._getframe({}).f_code.co_name'
+#print(eval(getframe_expr.format(2)))
+        
+from adafruit_motorkit import MotorKit
+kit = MotorKit(address = 0x60)
+p_kit = MotorKit(address = 0x61)
+
+from adafruit_servokit import ServoKit
+s_kit = ServoKit(address=0x44,channels=16)
+s_kit.servo[0].set_pulse_width_range(500, 2500)
+s_kit.servo[0].actuation_range = 270
+s_kit.servo[1].set_pulse_width_range(500, 2500)
+s_kit.servo[1].actuation_range = 270
+
+class Controls(multiprocessing.Process):
+    def __init__(self,q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, q13, q14, q15, q16, q17, q18,q19, q20, \
+                 q21, q22, q23, q24, q25, q26, q27, q28, q29, qm1, qm2, qm3, qm4, qm5, qm6, qm7, qs1, qs2, qs3, qs7, qs8, qs9, qs10, qs11, \
+                 qw3, qw4, qw8, qw9, qw10, qw11, qw12, qw13, qw14, qw15, qw16, qw17, qw18, qw19, qw20, qw21, qw22, \
+                 qw23, qw24, qw25, qw26, qw27, qw28, qw29, qw30, qw31, qw32, qw33, qw34, qw35, qw36, qw37, qw38, \
+                 qw39, qw40, qk1, qk2, qk3, qt4, qb1, qb3): 
+        self.web_running = 0
+        self.save_st = time.time() # save values every t seconds
+        self.save_dt = 5 # t seconds to save values
+        self.initial_web_update_st = time.time() # check comm to web every t seconds until response is received
+        self.web_dt = 1
+        multiprocessing.Process.__init__(self)
+        self.web_prev_msg = ""
+        
+        self.q1 = q1
+        self.q2 = q2
+        self.q3 = q3
+        self.q4 = q4
+        self.q5 = q5 # cntrl.py init_outlet
+        self.q6 = q6
+        self.q7 = q7
+        self.q8 = q8
+        self.q9 = q9
+        self.q10 = q10
+        self.q11 = q11
+        self.q12 = q12
+        self.q13 = q13
+        self.q14 = q14
+        self.q15 = q15
+        self.q16 = q16
+        self.q17 = q17
+        self.q18 = q18
+        self.q19 = q19
+        self.q20 = q20
+        self.q21 = q21
+        self.q22 = q22
+        self.q23 = q23        
+        self.q24 = q24
+        self.q25 = q25 # send kpv from py processes to cntrl.py
+        self.q26 = q26 # rest motors
+        self.q27 = q27 # start button
+        self.q28 = q28 # stop button
+        self.q29 = q29 # pause button
+
+        self.qw3 = qw3 # inlet_display
+        self.qw4 = qw4 # NA
+        self.qw8 = qw8 # pid values for web
+        self.qw9 = qw9 # send markers
+        self.qw10 = qw10 # ping web
+        self.qw11 = qw11 #in_vent_status
+        self.qw12 = qw12 # vent_status
+        self.qw13 = qw13 # eq_status
+        self.qw14 = qw14 # outlet_display
+        self.qw15 = qw15 # adj_pos_display
+        self.qw16 = qw16 # stpt_display
+        self.qw17 = qw17 # psi_stpt_display
+        self.qw18 = qw18 # send_cal_low
+        self.qw19 = qw19 # send_cal_high
+        self.qw20 = qw20 # send_cal_mid
+        self.qw21 = qw21 # send_web_message for cntrl.py
+        self.qw22 = qw22 # send_web_message for motor_current.py
+        self.qw23 = qw23 # send_web_message for serialworker.py
+        self.qw24 = qw24 # btn_status
+        self.qw25 = qw25 # pid_running_status
+        self.qw26 = qw26 # NA
+        self.qw27 = qw27 # NA
+        self.qw28 = qw28 # NA
+        self.qw29 = qw29 # NA
+        self.qw30 = qw30 # NA
+        self.qw31 = qw31 # NA
+        self.qw32 = qw32 # NA
+        self.qw33 = qw33 # NA
+        self.qw34 = qw34 # NA
+        self.qw35 = qw35 # NA
+        self.qw36 = qw36 # NA
+        self.qw37 = qw37 # NA
+        self.qw38 = qw38 # NA
+        self.qw39 = qw39 # NA
+        self.qw40 = qw40 # NA
+        
+        self.qs1 = qs1
+        self.qs2 = qs2
+        self.qs3 = qs3
+        self.qs7 = qs7
+        self.qs8 = qs8
+        self.qs9 = qs9
+        self.qs10 = qs10 # send kpv file to serialworker.py
+        self.qs11 = qs11
+                        
+        self.qm1 = qm1
+        self.qm2 = qm2
+        self.qm3 = qm3        
+        self.qm4 = qm4 # constant ma alarm checking
+        self.qm5 = qm5 # request from motor_current.py for kpv list
+        self.qm6 = qm6 # send kpv list to motor_current.py
+        self.qm7 = qm7 # send kpv list from motor_current.py to cntrl
+                
+        self.qk1 = qk1
+        self.qk2 = qk2
+        self.qk3 = qk3
+        
+        self.qt4 = qt4 # send kpv file to baro_data.py
+        
+        self.qb1 = qb1 # ??
+        self.qb3 = qb3 # send kpv file to baro_data.py
+
+        i2c = busio.I2C(board.SCL, board.SDA)
+        self.ina260 = adafruit_ina260.INA260(i2c, 0x40)
+
+        # for web update
+        self.initial_web_in_vent_status = 0
+        self.initial_web_eq_status = 0
+        self.initial_web_psi_vent_status = 0
+        self.initial_web_inlet_pos = 0
+        self.initial_web_outlet_pos = 0
+        # for web update
+
+        self.in_actual = None
+        self.psi_actual = 0
+        self.psi_actual_prev = 0
+        self.in_pid_run = 0
+        self.in_prev_stpt = -1
+        self.in_switch_to_fine = 0
+        self.psi_prev_stpt = -1
+                
+        self.psi_switch_to_fine = 1 # initial condition
+        self.psi_switch_to_rough = 0 # initial condition
+        
+        self.inlet_angle = 0
+        self.inlet_prev_dir = 1
+        self.outlet_angle = 0
+        self.outlet_prev_dir = 1
+        self.rdg_fail_count = 0
+        
+        self.pccu_count = 1.0
+        
+        self.next_point = 0 # bypass current auto setpoint to go to next point
+        self.prev_point = 0 # bypass current auto setpoint to go to previous point
+
+        self.vent = 0
+        self.pump = 0
+        self.in_stop_one_shot = 0
+        self.pid_pause = 0
+        self.pid_pause_btn = 0
+        self.in_full_auto = 0 # full auto mode walks through markers / calibration automatically
+        self.in_full_auto_stpt = 0
+        self.in_marker_sent = 0
+        self.in_number_markers_sent = 0
+        self.in_marker_sent_st = 0 # start timer after marker has been sent
+        
+        self.in_stable = 0  # inch readings stabilized - ready to send marker
+        self.in_marker_countup = 0
+        self.in_marker_send_st = time.time()
+        self.in_stable_st = 0 # start time
+        
+        self.in_full_auto_cal = 0 # calibration - calibration mode
+        self.in_cal_low_sent = 0
+        self.in_cal_high_sent = 0
+        self.in_cal_mid_sent = 0
+
+        self.psi_pid_run = 0
+        self.psi_stop_one_shot = 0
+        self.psi_full_auto = 0 # full auto mode walks through markers / calibration automatically
+        self.psi_full_auto = 0 # full auto mode walks through markers / calibration automatically
+        self.psi_full_auto_stpt = 0
+        self.psi_full_auto_stpt = 0
+        self.psi_marker_sent = 0
+        self.psi_num_markers_sent = 0
+        self.psi_marker_sent_st = 0 # start timer after marker has been sent
+        
+        self.psi_stable = 0  # inch readings stabilized - ready to send marker
+        
+        self.psi_marker_countup = 0
+        self.psi_stable_st = 0 # start time
+        
+        self.psi_full_auto_cal = 0 # calibration - calibration mode
+        self.psi_cal_low_sent = 0
+        self.psi_cal_high_sent = 0
+        self.psi_cal_mid_sent = 0
+        self.psi_avg_der = 1000
+        self.psi_avg_der_array = []
+        self.psi_avg_der_array_length = 10
+        
+        self.psi_avg_der_cycle_count = 0
+
+        self.prev_msg = ""
+        self.web_prev_msg = ""
+
+        self.prev_msg = ""
+                            
+    def recenter_cmd(self, data):                            
+            if int(data) == 2:
+                #self.cprint("self.Mc.adjuster_direction : %s"%self.Mc.adjuster_direction)
+                #self.cprint("--- ct215 adjuster amperage trip ---")
+                #self.cprint("self.Mc.adjuster_direction : %s"%self.Mc.adjuster_direction)
+                #self.cprint("self.Mc.adj_pos : %s"%self.Mc.adj_pos)
+                #self.cprint("self.Mc.adj_min_move_amp : %s"%self.Mc.adj_min_move_amp)
+                if self.Mc.adj_pos > self.Mc.adj_min_move_amp and self.Mc.adjuster_direction > 0:
+                    self.cprint("re-center adjuster down")
+                    self.Mc.s2(self.Mc.s2_down_spd,self.Mc.adjuster_runout)
+                    '''
+                    if self.Mc.s2_down_spd - 0.05 >= self.Mc.s2_down_spd_max:
+                        self.Mc.s2_down_spd = self.Mc.s2_down_spd - 0.05
+                        self.Mc.mod_kpv_file_entry(37, self.Mc.s2_down_spd)
+                        self.cprint("New adjuster down spd : %s"%self.Mc.s2_down_spd)
+                    elif self.Mc.s2_up_spd - 0.05 >= self.Mc.s2_up_spd_min:
+                        self.Mc.s2_up_spd = self.Mc.s2_up_spd - 0.05
+                        self.Mc.mod_kpv_file_entry(36, self.Mc.s2_up_spd)
+                        self.cprint("New adjuster up spd : %s"%self.Mc.s2_up_spd)
+                    else:
+                        self.cprint("Adjuster tuning failed")
+                    '''
+                if self.Mc.adj_pos < -1 * self.Mc.adj_min_move_amp and self.Mc.adjuster_direction < 0:
+                    self.Mc.s2(self.Mc.s2_up_spd,self.Mc.adjuster_runout)
+                    self.cprint("re-center adjuster up")
+                    '''
+                    if self.Mc.s2_up_spd + 0.05 <= self.Mc.s2_up_spd_max:
+                        self.Mc.s2_up_spd = self.Mc.s2_up_spd + 0.05
+                        self.Mc.mod_kpv_file_entry(36, self.Mc.s2_up_spd)
+                        self.cprint("New adjuster up spd : %s"%self.Mc.s2_up_spd)
+                    elif self.Mc.s2_down_spd + 0.05 <= self.Mc.s2_down_spd_min:
+                        self.Mc.s2_down_spd = self.Mc.s2_down_spd + 0.05
+                        self.Mc.mod_kpv_file_entry(37, self.Mc.s2_down_spd)
+                        self.cprint("New adjuster down spd : %s"%self.Mc.s2_down_spd)
+                    else:
+                        self.cprint("Adjuster tuning failed")
+                    '''
+            else:
+                self.cprint("center the adjuster")
+                self.Mc.static_center_inch_adjuster()
+                self.send_web_message("Command to re-center adjuster")               
+          
+    def send_web_message(self, var):
+        if var != self.web_prev_msg:
+            Dict = {'dest':'web_message', 'val':var}
+            self.qw21.put(Dict)
+            self.web_prev_msg = var
+                        
+    def web_run(self, data):
+        if int(data) == 1: # initial updates coming in from web
+            self.cprint("WEB RUNNING!")
+            self.web_running = 1
+            self.save_all(0)
+            self.Mc.init_web_valve_states()
+        else:
+            self.web_running = 0
+                
+    def eq_alarm(self, data):
+            self.cprint("vent alarm control command received")
+            self.send_web_message("vent alarm control command received")
+            self.pid_run = 0
+            self.psi_pid_run = 0
+            self.Mc.rest_motors()
+            self.Mc.equalizer_ctrl(float(data))
+                                             
+    def vent_alarm(self, data):
+            self.pid_run = 0
+            self.psi_pid_run = 0
+            self.Mc.rest_motors()
+            self.Mc.vent_ctrl(float(data))
+            
+    def in_vent_alarm(self,data):
+            self.pid_run = 0
+            self.psi_pid_run = 0
+            self.Mc.rest_motors()
+            self.Mc.in_vent_ctrl(float(data))
+                    
+    def full_auto_checks(self, data):
+        self.Mc.rest_motors() # safety control
+        try:
+            val = float(data)
+        except:
+            self.cprint("Auto value from web did not convert to float")
+            self.inch_pid_start = 0
+            self.in_full_auto = 0
+            self.Mc.rest_motors()
+        else:
+            self.cprint("Commanded inch setpoint = " + str(val))
+            if val > -1:
+                self.in_stable = 0
+                self.in_number_markers_sent = 0
+                self.in_marker_countdown = self.pccu_count_time_mod
+                self.in_full_auto_stpt = val
+                self.in_full_auto = 1
+                self.Mc.vent_ctrl(1) # vent is open for DP checks
+                self.in_pid_run = 1
+                self.in_auto_pid(val)
+            else: # auto stop button press
+                self.in_full_auto = 0
+                self.in_pid_run = 0
+                self.Mc.rest_motors()
+                self.Mc.vent_ctrl(0)
+                self.in_marker_sent = 0
+                 
+    def full_psi_auto_checks(self,data):
+        self.Mc.rest_motors() # safety control
+        try:
+            val = float(data)
+        except:
+            self.cprint("Auto value from web did not convert to float")
+            self.psi_pid_start = 0
+            self.psi_full_auto = 0
+            self.Mc.rest_motors()
+        else:
+            self.cprint("Commanded inch setpoint = " + str(val))
+            if val > -1:
+                self.psi_stable = 0
+                self.psi_full_auto_stpt = val
+                self.psi_full_auto = 1
+                self.Mc.vent_ctrl(1) # vent is open for DP checks
+                self.psi_pid_run = 1
+                self.psi_auto_pid(val)
+            else: # auto stop button press
+                self.psi_full_auto = 0
+                self.psi_pid_run = 0
+                self.Mc.rest_motors()
+                self.Mc.vent_ctrl(0)
+                self.psi_marker_sent = 0
+                             
+    def in_full_auto_cal_f(self,data):
+        self.Mc.rest_motors() # safety control
+        try:
+            val = float(data)
+        except:
+            self.cprint("Auto value from web did not convert to float")
+            self.inch_pid_start = 0
+            self.in_full_auto_cal = 0
+            self.Mc.rest_motors()
+        else:
+            self.cprint("Commanded inch setpoint = " + str(val))
+            if val > -1:
+                self.in_stable = 0
+                self.in_full_auto_stpt = val
+                self.in_full_auto_cal = 1
+                self.Mc.vent_ctrl(1) # vent is open for DP checks
+                self.Mc.equalizer_ctrl(0) # open the equalizer
+                self.in_pid_run = 1
+                self.in_auto_pid(val)
+            else: # auto stop button press
+                self.in_full_auto_cal = 0
+                self.in_pid_run = 0
+                self.Mc.rest_motors()
+                self.Mc.vent_ctrl(0)
+                self.in_cal_low_sent = 0
+                self.in_cal_high_sent = 0
+                self.in_cal_mid_sent = 0
+                self.in_marker_sent = 0
+                                             
+    def next_pt(self,data):
+        if int(data) == 1:
+            self.send_web_message("Next point command received")
+            self.next_point = 1
+                        
+    def prev_pt(self,data):
+        if int(data) == 1:
+            self.send_web_message("Previous point command received")
+            self.prev_point = 1
+                                                                                                            
+    def set_pccu_count(self,data):
+        self.pccu_count = float(data)
+        self.pccu_count_time_mod = 5 * self.pccu_count
+        self.in_stable_time_pccu_mod = self.in_stable_time *  self.pccu_count
+        if self.in_stable_time_pccu_mod > 12:
+            self.in_stable_time_pccu_mod = 12           
+        if self.pccu_count_time_mod > 12 :
+            self.pccu_count_time_mod = 12        
+
+    def stop_pid(self, data):
+        self.in_pid_run = 0
+        self.Mc.rest_motors()
+                    
+    def get_inch_val(self):
+        if not self.qs7.empty():
+            #self.cprint("new inch value")
+            try:
+                var = float((self.qs7.get())['in_num'])
+            except:
+                self.cprint("Not able to convert inch readings to float.")
+                self.cprint("Poll fail count: %s" %self.rdg_fail_count)
+                self.rdg_fail_count += 1
+            else:
+                if self.rdg_fail_count > 0:
+                    self.rdg_fail_count = 0
+                return var
+        else:
+            return self.in_actual
+
+    def get_psi_val(self):
+        if not self.qs8.empty():
+            try:
+                var = float((self.qs8.get())['psi_num'])
+            except:
+                self.cprint("Not able to convert inch readings to float")
+            else:
+                #self.cprint("var = %s psi" %var)
+                return var
+        else:
+            #self.cprint("returning previous psi value")
+            return self.psi_actual
+
+    def manual_control(self, data):
+        self.cprint(data)
+        if data == "coarse_up":
+            self.Mc.m4(1,50)
+
+        if data == "coarse_down":
+            self.Mc.m3(-0.9,self.Mc.m3_manual_pw)
+            self.Mc.m3(None,0)                        
+
+        if data == "fine_up":
+            self.Mc.s2(self.Mc.s2_up_spd, 100)
+
+        if data == "fine_down":
+            self.Mc.s2(self.Mc.s2_down_spd,100)
+
+        if data == "u_fine_up":
+            self.Mc.s2(self.Mc.s2_up_spd / 2, 10)
+
+        if data == "u_fine_down":
+            self.Mc.s2(self.Mc.s2_down_spd / 2, 10)
+
+        if data == "1":
+            Dict =  {'dest':'btn_status', 'purpose':'adj_up', 'data':'1'}
+            self.qw24.put(Dict)  
+            Dict =  {'dest':'btn_status', 'purpose':'adj_down', 'data':'0'}                                            
+            self.qw24.put(Dict)              
+            self.check_adj = 1
+            while self.check_adj == 1:
+                self.check_input(0)
+                self.Mc.s2(1,300)
+
+        if data == "0":
+            Dict =  {'dest':'btn_status', 'purpose':'adj_up', 'data':'0'}
+            self.qw24.put(Dict)  
+            Dict =  {'dest':'btn_status', 'purpose':'adj_down', 'data':'0'}                                            
+            self.qw24.put(Dict)                          
+            self.Mc.s2(0,0)
+            self.check_adj = 0
+                
+        if data == "-1":
+            Dict =  {'dest':'btn_status', 'purpose':'adj_up', 'data':'0'}
+            self.qw24.put(Dict)  
+            Dict =  {'dest':'btn_status', 'purpose':'adj_down', 'data':'1'}                                            
+            self.qw24.put(Dict)                          
+            self.check_adj = -1
+            while self.check_adj == -1:
+                self.check_input(0)
+                self.Mc.s2(-1,300)
+        
+    def reset_in_intg(self): 
+        None
+
+    def set_in_rough_fine(self,val):
+        if val == 0:
+            self.in_switch_to_fine = 0
+            self.in_switch_to_rough = 1
+        else:
+            self.in_switch_to_fine = 1
+            self.in_switch_to_rough = 0
+
+    def set_psi_rough_fine(self,val):
+        if val == 0:
+            self.psi_switch_to_fine = 0
+            self.psi_switch_to_rough = 1
+        else:
+            self.psi_switch_to_fine = 1
+            self.psi_switch_to_rough = 0
+
+    def in_auto_pid(self, val): #auto pid procedure
+        #self.cprint("in_auto_pid entered")
+        if val > -1:
+            st = str(val)
+            st = st.replace(".","_")
+            st = st.replace("_0","")
+            btn = 'auto_' + st
+            print(btn)
+            Dict =  {'dest':'btn_status', 'purpose':'auto_btn_off', 'data':'-1'}
+            self.qw24.put(Dict)          
+            Dict =  {'dest':'btn_status', 'purpose':btn, 'data':'1'}
+            self.qw24.put(Dict)                          
+        st = time.time()
+        first_inst = 1 # first instance
+
+        # set valve positions
+        if self.inlet_angle < self.Mc.s0_default_angle - 5:
+            self.close_inlet()
+        if self.outlet_angle < self.Mc.s1_default_angle - 5:
+            self.close_outlet()
+        # set valve positions
+
+        if val != self.in_prev_stpt: # update web setpoint display
+            Dict = {'dest':'stpt_display', 'data':val}
+            self.mq(self.qw16, Dict)
+            self.in_prev_stpt = val
+
+        self.in_reset_vals = 1 # reset pid values
+        stpt = val
+
+        in_stpt_div = self.in_full_auto_stpt / (self.in_stpt_divisions - 1) # difference between each setpoint for full auto operation
+        in_stpt_div_cal = self.in_full_auto_stpt / (self.in_stpt_cal_divisions - 1) # difference between each calibration setpoint for full auto operation
+
+        # capture initial conditions
+        self.in_switch_to_fine = 1 # start in fine mode
+        self.in_switch_to_rough = 0 # start in fine mode
+        self.in_pid_one_shot = 1
+
+        #get adj_pos values from file
+        self.Mc.get_kpv_file()#get kpv values from file
+
+        self.in_switch_stpt = self.Mc.Kpv[8] # inch setpoint to switch over from rough pid to fine pid
+        self.in_switch_stpt_rough = self.Mc.Kpv[9]
+        self.in_swap_soak = self.Mc.Kpv[24]
+        self.in_fine_dbnd = self.Mc.Kpv[12]
+        self.in_rough_dbnd = 0
+
+        p = 0 # proportional component
+        pp = 0 # proportional component
+        i = 0
+        d = 0
+
+        reset_intg = 0
+
+        M_stop = 0
+        p = 0
+
+        self.in_read_run = 0
+        self.in_stop_one_shot = 0
+
+        while self.in_pid_run and stpt != -1:
+            # verify inputs
+            var = self.check_input(0)
+            pw = 0
+            if var == 0:
+                self.stop_button()
+            if self.in_pid_run == 1: # wait for initial pid start button press
+                if self.in_pid_one_shot == 1: # procedure to re-center adjuster
+                    self.Mc.center_inch_adjuster()
+                    self.send_web_message("Inital center inch adjuster")
+                    self.in_pid_one_shot = 0
+
+            elif self.in_pid_run == 0 and M_stop == 0:
+                self.Mc.rest_motors()
+                M_stop = 1 # only need to fire once
+            # verify inputs
+
+            while self.in_pid_run == 1 and stpt != None and stpt != -1:
+                var = self.check_input(0)
+                if var == 0:
+                    self.in_pid_run = 0                
+                if self.pid_pause == 0:
+                    Dict = {'dest':'pid_running','data':1}
+                    self.mq(self.qw25,Dict)                
+                    # verify inputs
+                    var = self.check_input(0)
+                    if var == 0:
+                        self.in_pid_run = 0
+                    # verify inputs
+                    
+                    # move to next/prev point?
+                    vap = self.check_next_pt()
+                    if vap == "next_point":
+                        self.in_marker_sent = 0
+                        self.in_prev_stpt = stpt
+                        stpt = stpt - in_stpt_div
+                        if stpt < 0:
+                            stpt = -1
+                            self.stop_button()
+                        Dict = {'dest':'stpt_display', 'data':stpt}
+                        self.mq(self.qw16, Dict)
+                    
+                        self.in_number_markers_sent = 0
+                        self.send_web_message("New setpoint = %s"%stpt)
+                        self.in_marker_sent = 0
+                        self.in_stable_st = 0
+                        self.in_marker_send_st = 0
+                        self.in_auto_pid(stpt) # start auto pid at next marker
+                    
+                    vap = self.check_prev_pt()
+                    if vap == "prev_point":
+                        self.in_prev_stpt = stpt
+                        stpt = stpt + in_stpt_div
+                        if stpt < 0:
+                            stpt = -1
+                            self.stop_button()
+                        Dict = {'dest':'stpt_display', 'data':stpt}
+                        self.mq(self.qw16, Dict)
+                    
+                        self.in_number_markers_sent = 0
+                        self.send_web_message("New setpoint = %s"%stpt)
+                        self.in_marker_sent = 0
+                        self.in_stable_st = 0
+                        self.in_marker_send_st = 0
+                        self.in_auto_pid(stpt) # start auto pid at next marker
+                    # move to next/prev point?
+                    
+                    
+                    # make sure equalizer is closed
+                    if stpt > 0:
+                        self.Mc.equalizer_ctrl(1)
+                        #self.cprint("704 eq control")
+                    # make sure equalizer is closed
+                    
+                    self.in_actual = self.get_inch_val()
+                    M_stop = 1
+                    
+                    if self.in_pid_run != 0 and self.in_actual != None and stpt != None and stpt != -1: # conditions correct to run pid
+                        pp = p # proportional error value from previous pid iteration
+                        p = stpt - self.in_actual # calculate new proportional error
+                        d = p - pp
+                        if p * pp < 0: # if setpoint was passed, reset the integrals
+                            self.reset_in_intg()
+                        self.in_rough_nosoak = self.Mc.Kpv[10]
+                    
+                        dt = time.time() - st # time between pid cycles for algorithm
+                    
+                        if stpt == 0:
+                            #self.cprint("735 eq control")
+                            self.Mc.equalizer_ctrl(0) # open the equalizer
+                    
+                        if abs(p) > self.in_switch_stpt + self.in_fine_dbnd:
+                            None
+                            #self.send_web_message("DP err (%s) outside of setpoint deadband (%s)"%(self.ft2(abs(p),2),self.in_switch_stpt + self.in_fine_dbnd))
+                    
+                    
+                        """------------------------------------"""
+                        """------------------------------------"""
+                        """----------fine pid-----------------"""
+                        if self.in_switch_to_fine == 1: # fine pid - <= "2" in difference + deadband - will operate fine adjustment motor
+                            cif = 1 # continue if statement - used to exit fine mode
+                    
+                            # reset values if switching to fine from rough pi
+                            if self.in_switch_to_rough == 1 or first_inst == 1:
+                                if first_inst == 1:
+                                    first_inst = 0
+                                #self.cprint("switching from rough to fine")
+                                i = 0
+                                d = 0
+                                time.sleep(self.in_swap_soak / 1000)
+                                self.in_switch_to_rough = 0
+                                self.in_actual = self.get_inch_val()
+                                p = stpt - self.in_actual
+                                pp = p
+                                kp = self.Mc.s2_Kp
+                                ki = self.Mc.s2_Ki
+                                kd = self.Mc.s2_Kd
+                    
+                    
+                            # check to see if switch to rough is in order
+                            if abs(p) > self.in_switch_stpt + self.in_fine_dbnd:
+                                self.in_switch_to_rough = 1
+                                #self.cprint("1) self.in_switch_to_rough = 1")
+                                cif = 0
+                            # check to see if switch to rough is in order
+                    
+                            #self.cprint("self.Mc.adj_pos : %s" %self.Mc.adj_pos)
+                    
+                            if abs(self.Mc.adj_pos) > self.adj_max_pos: #Need to re-center adjuster
+                                self.cprint("Adjuster max position reached")
+                                self.send_web_message("Adjuster max position reached")
+                                self.Mc.center_inch_adjuster()
+                                cif = 0
+                                self.in_switch_to_rough = 1
+                                #self.cprint("2) self.in_switch_to_rough = 1")
+                    
+                            if stpt < 0:
+                                self.stop_button()
+                    
+                            # full auto operation of markers-------------------------------------------------------------
+                            if cif == 1 and self.in_full_auto == 1 and stpt != -1:
+                                #self.cprint("PCCU count = %s" %self.pccu_count)
+                                self.in_full_auto_cal = 0
+                                if self.in_marker_sent == 0 and self.next_point == 0 and self.prev_point == 0:
+                                    if abs(p) <= self.in_stable_dbnd and abs(d) < self.in_stable_der:
+                                        if self.in_stable_st == 0: # just entered deadband - start the timer
+                                            self.in_stable_st = time.time() # start the timer to determine inch reading stability for marker
+                                            #self.cprint("Inside deadband - timer started")
+                                            self.send_web_message("Inside DP setpoint deadband - Sending marker in %s" %self.in_marker_countdown)
+                                            self.in_marker_countdown -= 1
+                                            self.in_marker_countup += 1
+                                        elif time.time() - self.in_stable_st > self.in_stable_time_pccu_mod:  # start timer already running - inch readings stable for enough time to send marker
+                                                self.cprint("Sending marker %s" %stpt)
+                                                self.send_web_message("Sending DP marker: %s"%stpt)
+                                                self.send_marker(stpt)
+                                                self.in_marker_sent = 1
+                                                self.in_marker_send_st = time.time()
+                                                self.in_marker_countdown = self.pccu_count_time_mod
+                                                self.in_marker_countup = 0
+                                        if time.time() - self.in_stable_st > self.in_marker_countup:
+                                            self.send_web_message("Inside DP setpoint deadband - Sending marker in %s" %self.in_marker_countdown)
+                                            self.in_marker_countdown -= 1
+                                            self.in_marker_countup += 1
+                                    else: # outside of deadband - reset timer
+                                        if abs(d) > self.in_stable_der:
+                                            self.send_web_message("DP derivative too high (%s > %s)- resetting timer"%(format(abs(d),'.2f'), self.in_stable_der))
+                                        else:
+                                            None
+                                            self.send_web_message("Outside of deadband - timer reset")
+                                            #self.send_web_message("DP err (%s) outside of setpoint deadband (%s)"%(self.ft2(abs(p),2),self.in_stable_dbnd ))
+                                        self.in_stable_st = 0
+                                        self.in_marker_countdown = self.pccu_count_time_mod
+                                        self.in_marker_countup = 0
+                                elif self.next_point == 0 or self.prev_point == 0: # marker already sent
+                                    #self.cprint("marker sent")
+                                    if time.time() - self.in_marker_send_st > self.in_marker_time or self.in_number_markers_sent >= 2:
+                                        self.in_stable_st = 0
+                                        self.in_marker_send_st = 0
+                                        self.in_marker_sent = 0
+                                        self.in_number_markers_sent += 1
+                                        #self.cprint("number markers sent = %s" %self.in_number_markers_sent)
+                                        if self.in_number_markers_sent >= 2:
+                                            self.cprint("Moving to next marker")
+                                            self.send_web_message("Moving to next marker")
+                                            stpt = stpt - in_stpt_div # setpoint for next marker
+                                            self.in_number_markers_sent = 0
+                                            if stpt < 0:
+                                                self.send_web_message("Test complete")
+                                                self.stpt = -1
+                                                self.stop_button()
+                                                self.Mc.rest_motors()
+                                            else:
+                                                self.send_web_message("New setpoint = %s"%stpt)
+                                                self.in_marker_sent = 0
+                                                self.in_stable_st = 0
+                                                self.in_marker_send_st = 0
+                                                self.in_auto_pid(stpt) # start auto pid at next marker
+                    
+                            elif cif == 1 and self.in_full_auto_cal == 0: # not in full auto
+                                self.in_stable_st = 0 # reset the timer for inch stability for markers
+                                self.in_marker_sent = 0
+                                self.in_marker_send_st = 0
+                            else: # cif = 0
+                                None
+                                #self.cprint("cif : %s"%cif)
+                                #self.cprint("self.in_switch_to_rough : %s"%self.in_switch_to_rough)
+                            # full auto operation of markers-------------------------------------------------------------
+                    
+                    
+                    
+                    
+                    
+                            # full auto calibration----------------------------------------------------------------------
+                            if cif == 1 and self.in_full_auto_cal == 1 and stpt != -1:
+                                #self.cprint("PCCU count = %s" %self.pccu_count)
+                                #self.cprint("in inch full auto calibration")
+                                self.in_full_auto = 0
+                                if self.in_marker_sent == 0:
+                                    #self.cprint("self.in_stable_der : %s"%self.in_stable_der)
+                                    if abs(p) <= self.in_stable_dbnd and abs(d) < self.in_stable_der:
+                                        if self.in_stable_st == 0: # just entered deadband - start the timer
+                                            self.in_stable_st = time.time() # start the timer to determine inch reading stability for marker
+                                            self.cprint("Inside deadband - timer started")
+                                            self.send_web_message("Inside DP setpoint deadband - Sending calibration in %s" %self.in_marker_countdown)
+                                            self.in_marker_countdown -= 1
+                                            self.in_marker_countup += 1
+                                        elif time.time() - self.in_stable_st > self.in_stable_time_pccu_mod:  # start timer already running - inch readings stable for enough time to send marker
+                                                self.cprint("Sending calibration %s" %stpt)
+                                                self.send_web_message("Sending DP calibration: %s"%stpt)
+                                                if self.in_cal_low_sent == 0 and stpt == 0:
+                                                    self.send_cal_low(stpt)
+                                                    self.in_marker_sent = 1
+                                                    self.in_cal_low_sent = 1
+                                                    self.in_marker_send_st = time.time()
+                                                elif self.in_cal_high_sent == 0 and stpt == self.in_full_auto_stpt:
+                                                    self.send_cal_high(stpt)
+                                                    self.in_marker_sent = 1
+                                                    self.in_cal_high_sent = 1
+                                                    self.in_marker_send_st = time.time()
+                                                    pass
+                                                elif self.in_cal_mid_sent == 0 and stpt == in_stpt_div_cal:
+                                                    self.send_cal_mid(stpt)
+                                                    self.in_marker_sent = 1
+                                                    self.in_cal_mid_sent = 1
+                                        if time.time() - self.in_stable_st > self.in_marker_countup:
+                                            self.send_web_message("Inside DP setpoint deadband - Sending marker in %s" %self.in_marker_countdown)
+                                            #self.cprint("time.time() : %s"%time.time())
+                                            #self.cprint("current dt : %s"%(time.time() - self.in_stable_st))
+                                            self.in_marker_countdown -= 1
+                                            self.in_marker_countup += 1
+                                    else: # outside of deadband - reset timer
+                                        if abs(d) < self.in_stable_der:
+                                            self.send_web_message("DP derivative too high - resetting timer")
+                                        else:
+                                            self.send_web_message("Outside of deadband - timer reset")
+                                            #self.send_web_message("DP err (%s) outside of setpoint deadband (%s)"%(self.ft2(abs(p),2),self.in_stable_dbnd ))
+                                        self.in_stable_st = 0
+                                        self.in_marker_countdown = self.pccu_count_time_mod
+                                        self.in_marker_countup = 0
+                                else: # marker already sent - wait for pccu to catch up
+                                    if time.time() - self.in_marker_send_st > (self.in_marker_time * self.pccu_count):
+                                        self.cprint("Moving to next calibration point")
+                                        if self.in_cal_mid_sent == 0:
+                                            stpt = in_stpt_div_cal # setpoint for mid calibration
+                                            if self.in_cal_high_sent == 0:
+                                               stpt = self.in_full_auto_stpt # setpoint for high calibration
+                                               self.send_web_message("New setpoint = %s"%stpt)
+                                            self.in_marker_sent = 0
+                                            self.in_stable_st = 0
+                                            self.in_marker_send_st = 0
+                                            self.in_auto_pid(stpt) # start auto pid at next marker
+                                        elif self.in_cal_mid_sent == 1:
+                                            self.in_marker_send_st = time.time()
+                                            self.in_cal_low_sent = 0
+                                            self.in_cal_high_sent = 0
+                                            self.in_cal_mid_sent = 0
+                                            self.stop_button()
+                                            self.Mc.rest_motors()
+                                            self.send_web_message("Calibration complete")
+                            elif cif == 1 and self.in_full_auto == 0: # not in full auto cal
+                                self.in_stable_st = 0 # reset the timer for inch stability for markers
+                                self.in_marker_sent = 0
+                                self.in_marker_send_st = 0
+                            # full auto calibration----------------------------------------------------------------------
+                            #self.cprint("after auto 839")
+                    
+                    
+                            #self.cprint("fine")
+                            self.in_fine_dbnd = 0 # deadband to prevent cycling between fine and rough pid
+                            self.in_rough_dbnd = 0.1 # deadband to prevent cycling between fine and rough pid
+                            if abs(p) < .01:
+                                i = 0
+                                #self.cprint("s2 intg reset to 0")
+                            if abs(p) < self.Mc.s2_intg_holdoff:
+                                i = i + p * dt # integral - running sum of errors
+                            if dt != 0: # prevent divide by 0
+                                d = (p - pp) / dt # derivative
+                    
+                            pid = pid = kp * p + ki * i + kd * d
+                    
+                            if stpt != 0: #prevent divide by 0
+                                pw = abs(pid/self.in_switch_stpt) * self.Mc.s2_rng + self.Mc.s2_min
+                            if cif == 1:
+                                None
+                            if cif == 1 and p > -0.00 and stpt != 0: # inside deadband - under stpt
+                                self.Mc.s2(self.Mc.s2_up_spd, pw) # run adjuster at the new level / pw - save value as actual value act
+                            elif cif == 1 and p < 0.00 and stpt != 0: #inside deadband - over stpt
+                                self.Mc.s2(self.Mc.s2_down_spd, pw) # run adjuster at the new level / pw - save value as actual value act
+                            self.Mc.s2_soak_scale = 1 - abs(p / self.in_switch_stpt) # change multiplier to change soak time based on distance from setpoint
+                            self.Mc.s2_soak_scaled = abs(self.Mc.s2_soak * self.Mc.s2_soak_scale)
+                            if cif == 1 and stpt != 0:
+                                self.Mc.s2(0, self.Mc.s2_soak_scaled) # stop the adjuster and allow soak time for fluctuations in pressure
+                    
+                        """----------fine pid-----------------"""
+                        """------------------------------------"""
+                        """------------------------------------"""
+                    
+                    
+                    
+                        """------------------------------------"""
+                        """------------------------------------"""
+                        """----------rough pid-----------------"""
+                        if self.in_switch_to_rough == 1 and stpt != -1: # rough pid - more than "2" in difference + deadband - operates pump and vent  ---  abs(err) > self.in_switch_stpt + self.in_rough_dbnd or
+                            #self.cprint("in rough")
+                    
+                            # check to see if switch to fine is in order
+                            cif = 1 # continue if statement - used to exit rough mode
+                            if abs(p) <= self.in_switch_stpt + self.in_fine_dbnd and   \
+                               (p * pp < 0 or stpt == 0):
+                                self.in_switch_to_fine = 1
+                                cif = 0
+                            # check to see if switch to fine is in order
+                    
+                            self.Mc.m3_soak_scale = 1 - abs(p / self.in_rough_nosoak) # change multiplier to change soak time based on distance from setpoint
+                            self.Mc.m4_soak_scale = 1 - abs(p / self.in_rough_nosoak) # change multiplier to change soak time based on distance from setpoint
+                            if self.Mc.m4_soak_scale < 0:
+                                self.Mc.m4_soak_scale = 0
+                            self.Mc.m3_soak_scaled = self.Mc.m3_soak * self.Mc.m3_soak_scale
+                            self.Mc.m4_soak_scaled = self.Mc.m4_soak * self.Mc.m4_soak_scale
+                    
+                            if cif == 1 and self.in_switch_to_fine == 1: # reset values if switching to fine from rough pid
+                                self.in_actual = self.get_inch_val()
+                                p = stpt - self.in_actual                                
+                                i = d = 0
+                                self.vent = 1
+                                self.pump = 1
+                                self.in_switch_to_fine = 0
+                    
+                            self.in_fine_dbnd = 0 # reset fine dbnd
+                            self.in_rough_dbnd = 0 # reset rough dbnd
+                    
+                            '''vent pid'''
+                            if cif == 1 and p < 0:
+                                #self.cprint("\ninch vent")
+                                if self.pump == 1 or first_inst == 1:
+                                    if first_inst == 1:
+                                        first_inst = 0
+                                    time.sleep(2)
+                                    self.in_actual = self.get_inch_val()
+                                    p = stpt - self.in_actual
+                                    i = d = 0
+                                    dt = 0
+                                    kp = self.Mc.m3_Kp
+                                    ki = self.Mc.m3_Ki
+                                    kd = self.Mc.m3_Kd
+                                    
+                                # check to see if switch to fine is in order
+                                cif = 1 # continue if statement - used to exit rough mode
+                                if abs(p) <= self.in_switch_stpt + self.in_fine_dbnd:
+                                    self.in_switch_to_fine = 1
+                                    cif = 0
+                                # check to see if switch to fine is in order                                    
+                                
+                                if cif == 1:    
+                                    self.vent = 1
+                                    self.pump = 0
+                                
+                                    i = i + (p * dt) # integral - running sum of errors - pump
+                                    if i > self.Mc.m3_max_intg:
+                                        i = self.Mc.m3_max_intg
+                    
+                                    pid = pid = kp * p + ki * i + kd * d
+                    
+                                    if stpt != 0: #prevent divide by 0
+                                        pw = abs(pid/self.in_switch_stpt_rough) * self.Mc.m3_rng + self.Mc.m3_min
+                                        #self.cprint("pw : %s"%pw)
+                                    if stpt != 0:
+                                        self.Mc.m3(self.Mc.m3_level, pw) # open the vent at the new level / pw
+                                    if abs(p) < self.in_rough_nosoak:
+                                        self.Mc.m3(None, self.Mc.m3_soak)# _scaled)
+                    
+                                ''' pump pid'''
+                            elif cif == 1 and p > 0 and stpt != 0: #self.in_switch_stpt + self.in_rough_dbnd: # below setpoint
+                                #self.cprint("\npump")
+                                if self.vent == 1 or first_inst == 1:
+                                    if first_inst == 1:
+                                        first_inst = 0
+                                    time.sleep(2)
+                                    self.in_actual = self.get_inch_val()
+                                    p = stpt - self.in_actual   
+                                    i = d = 0
+                                    dt = 0
+                                    kp = self.Mc.m4_Kp
+                                    ki = self.Mc.m4_Ki
+                                    kd = self.Mc.m4_Kd
+                                    
+                                # check to see if switch to fine is in order
+                                cif = 1 # continue if statement - used to exit rough mode
+                                if abs(p) <= self.in_switch_stpt + self.in_fine_dbnd:
+                                    self.in_switch_to_fine = 1
+                                    cif = 0
+                                # check to see if switch to fine is in order  
+                                
+                                if cif == 1:                                    
+                                    self.pump = 1
+                                    self.vent = 0
+                                    self.Mc.s2(0,0) # No need to operate adjuster until outside of rough range
+                                    self.Mc.m3(None,0) # No need to operate vent when pump is on
+                    
+                                    i = i + (p * dt) # integral - running sum of errors - pump
+                                    if i > self.Mc.m4_max_intg:
+                                        i = self.Mc.m4_max_intg
+                    
+                                    pid = kp * p + ki * i + kd * d
+                     
+                                    if stpt != 0:
+                                        pw = abs(pid/self.in_switch_stpt_rough) * self.Mc.m4_rng + self.Mc.m4_min
+                    
+                                    if abs(p) < self.in_rough_nosoak:
+                                        self.pump_level = abs(p/self.in_rough_nosoak) * self.Mc.m4_level_rng + self.Mc.m4_level_min
+                                        #self.cprint("pump level : %s"%self.pump_level)
+                                        self.Mc.m4(self.pump_level, pw) # operate the pump at the new level / pw
+                                    else:
+                                        self.Mc.m4(0.8, pw) # operate the pump at the new level / pw
+                    
+                            """----------rough pid-----------------"""
+                            """------------------------------------"""
+                            """------------------------------------"""
+                    
+                        else: #bogus numbers - do nothing
+                            pass
+                    
+                        st = time.time() # start time for next pid iteration
+                        Dict = {'dest':'web_pid', 'p':p, 'i':i, 'd':d, 'kp':kp, 'ki':ki, 'kd':kd, 'kpp':kp*p, 'kii':ki*i, 'kdd':kd*d, 'pid': kp*p + ki*i + kd*d,'pw':pw}
+                        self.send_web_pid(Dict)
+                    else:
+                        #self.cprint("something didn't work")
+                        pass
+                    var = self.check_input(0)
+                    if var == 0:
+                        self.in_pid_run = 0
+                time.sleep(.05) # while inch_pid_start == 1
+            var = self.check_input(0)
+            if var == 0:
+                self.in_pid_run = 0
+            time.sleep(.05) # self.running
+
+
+    def psi_auto_pid(self, val): #auto psi pid procedure
+        try: # catch psi_auto_pid failure
+            if val > -1:   
+                st = str(val)
+                st = st.replace(".","_")
+                st = st.replace("_0","")
+                btn = 'auto_psi_' + st
+                print(btn)
+                Dict =  {'dest':'btn_status', 'purpose':'auto_btn_off', 'data':'-1'}
+                self.qw24.put(Dict)                          
+                Dict =  {'dest':'btn_status', 'purpose':btn, 'data':'1'}
+                self.qw24.put(Dict)              
+            p = 0
+            pp = 0
+            i = 0
+            d = 0
+            first_inst = 1
+            if val != self.psi_prev_stpt: # update web setpoint display
+                self.psi_prev_stpt = val
+                Dict = {'dest':'psi_stpt_display', 'data':val}
+                self.mq(self.qw17, Dict)
+            self.cprint("psi_auto_pid entered")
+            stpt = val
+            self.cprint("Setpoint = %s psi" %stpt)
+            psi_stpt_div = self.psi_full_auto_stpt / (self.psi_stpt_divisions - 1) # difference between each setpoint for full auto operation
+            psi_stpt_div_cal = self.psi_full_auto_stpt / (self.psi_stpt_cal_divisions - 1) # difference between each calibration setpoint for full auto operation
+            st = time.time()
+            self.psi_pid_one_shot = 1
+            self.Mc.get_kpv_file() # get kpv values from file
+            self.psi_switch_stpt = stpt / self.psi_switch_stpt_divisor # setpoint to switch over from rough pid to fine pid
+            if self.psi_switch_stpt < 0.1:
+                self.psi_switch_stpt = 0.1
+            self.psi_switch_stpt_rough = 200
+            self.outlet = 1
+            self.inlet = 0
+            psi_rough_dbnd = 0
+            p = 0 # proportional component
+            pp = 0 # proportional component
+            reset_intg = 0
+            M_stop = 0
+            self.psi_read_run = 0
+            self.psi_stop_one_shot = 0
+
+            self.psi_actual = self.get_psi_val() # update psi values from crystal
+            self.init_psi_actual = self.psi_actual
+            self.psi_actual_prev = self.psi_actual
+            p = stpt - self.psi_actual
+            pp = p
+
+            while self.psi_pid_run:
+                #self.cprint("psi_pid_run = %s" %self.psi_pid_run)
+                var = self.check_input(0)
+                if var == 0:
+                    self.psi_pid_run = 0
+                if self.psi_pid_run == 1: # wait for initial pid start button press
+                    if self.psi_pid_one_shot == 1: # procedure to re-center adjuster
+                        self.Mc.center_inch_adjuster()
+                        self.send_web_message("Initial center adjuster")
+                        self.psi_pid_one_shot = 0
+
+                elif self.psi_pid_run == 0 and M_stop == 0:
+                    self.Mc.rest_motors()
+                    M_stop = 1 # only need to fire once
+
+                #self.cprint("pid run = %s stpt = %s" %(self.psi_pid_run,stpt))
+
+                #---------------------Main while loop-----------------------
+                while self.psi_pid_run == 1 and stpt != None:
+                    if self.pid_pause == 0:
+                        Dict = {'dest':'pid_running','data':1}
+                        self.mq(self.qw25,Dict)
+                        #self.cprint("1072 main while loop")
+                        # determine number of pid cycles / sec
+                        var = self.check_input(0)
+                        if var == 0:
+                            sef.psi_pid_run = 0
+                            stpt = None
+                        #self.cprint("1158 eq control")
+                        self.Mc.equalizer_ctrl(0) # make sure the equalizer is open
+                        if stpt != 0:
+                            self.Mc.vent_ctrl(0) # make sure the psi vent is closed
+                        else:
+                            self.Mc.vent_ctrl(1) # make sure the psi vent is open
+                        
+                        # update current pressure readings
+                        self.psi_actual_prev = self.psi_actual
+                        self.psi_actual = self.get_psi_val() #
+                        M_stop = 1 #???
+                        
+                        if self.psi_pid_run != None and stpt != None: # conditions correct to run pid
+                            #self.cprint("conditions correct")
+                            dt = time.time() - st # time between pid cycles for algorithm
+                            psi_dst = time.time()
+                            st = time.time() # reset start time for next cycle
+                            pp = p # proportional error value from previous pid iteration
+                            p = stpt - self.psi_actual # calculate new proportional error
+                            i += p # integral
+                            d = p - pp # derivative
+                        
+                            # calculate avg derivative
+                            if time.time() - psi_dst < self.psi_der_cycle_time:
+                                ++ self.psi_avg_der_cycle_count
+                            else:
+                                psi_dst = time.time()
+                                self.psi_avg_der_array_length = self.psi_avg_der_cycle_count
+                                self.psi_avg_der_cycle_count = 0
+                        
+                            self.psi_avg_der_array.append(d)
+                            while len(self.psi_avg_der_array) > self.psi_avg_der_array_length:
+                                self.psi_avg_der_array.pop(0)
+                            if len(self.psi_avg_der_array) > 0:
+                                self.psi_avg_der = sum(self.psi_avg_der_array) / len(self.psi_avg_der_array)
+                                #self.cprint("psi_avg_der : %s"%self.ft2(self.psi_avg_der,2))
+                            # calculate avg derivative
+                        
+                            if abs(p) > self.psi_switch_stpt + self.psi_fine_dbnd:
+                                self.send_web_message("SP outside of setpoint deadband")
+                        
+                            #-----------------------------------------------
+                            #psi fine pid
+                            if self.psi_switch_to_fine == 1:
+                        
+                                if self.psi_switch_to_rough == 1 or first_inst == 1: # reset values if switching to rough to fine pid
+                                    if first_inst == 1:
+                                        first_inst = 0
+                                    #self.cprint("1152 switched to psi fine")
+                                    self.close_inlet()
+                                    self.close_outlet()
+                                    d = 0
+                                    i = 0
+                                    self.psi_switch_to_rough = 0
+                                    kp = self.Mc.s2_Kp
+                                    ki = self.Mc.s2_Ki
+                                    kd = self.Mc.s2_Kd
+                        
+                        
+                                # determine if switch to rough is in order
+                                cif = 1 # used to bypass fine to get to rough
+                                #self.cprint("err : %s"%p)
+                                if abs(p) > self.psi_switch_stpt + self.psi_fine_dbnd:
+                                    cif = 0
+                                    self.psi_switch_to_rough = 1
+                                    #self.cprint("1113 in fine switching to rough")
+                                # determine if switch to rough is in order
+                        
+                        
+                                # make sure inlet and outlet are fully closed
+                                if cif == 1 and self.inlet_angle > self.Mc.s0_min_angle:
+                                    self.close_inlet()
+                                if cif == 1 and self.outlet_angle > self.Mc.s1_min_angle:
+                                    self.close_outlet()
+                                if cif == 1 and abs(self.Mc.adj_pos) > self.adj_max_pos: #Need to re-center adjuster
+                                    self.cprint("Adjuster max position reached")
+                                    self.send_web_message("Adjuster max position reached")
+                                    cif = 0
+                                    self.Mc.center_inch_adjuster()
+                                    self.psi_switch_to_rough = 1
+                                if stpt < 0: # command to stop pid
+                                    self.psi_full_auto = 0
+                                #self.cprint("fine")
+                                psi_rough_dbnd = 0.1 # deadband to prevent cycling between fine and rough pid
+                        
+                            # full auto operation of markers-------------------------------------------------------------
+                            # full auto operation of markers-------------------------------------------------------------
+                            # full auto calibration----------------------------------------------------------------------
+                            # full auto calibration----------------------------------------------------------------------
+                        
+                        
+                                if abs(p) < .01:
+                                    i = 0
+                                if abs(p) < self.Mc.s2_intg_holdoff:
+                                    i = i + p * dt # integral - running sum of errors
+                                if i > self.Mc.s2_max_intg:
+                                    i = self.Mc.s2_max_intg
+                        
+                                pid = pid = kp * p + ki * i + kd * d
+                        
+                                if stpt != 0: #prevent divide by 0
+                                    pw = abs(pid/self.psi_switch_stpt) * self.Mc.s2_rng + self.Mc.s2_min
+                                if p > -0.00: # inside deadband - under stpt
+                                    self.Mc.s2(self.Mc.s2_up_spd, pw) # run adjuster at the new level / pw - save value as actual value act
+                                if p < 0.00: #inside deadband - over stpt
+                                    self.Mc.s2(self.Mc.s2_down_spd, pw) # run adjuster at the new level / pw - save value as actual value act
+                                self.Mc.s2_soak_scale = 1 - abs(p / self.psi_switch_stpt) # change multiplier to change soak time based on distance from setpoint
+                                self.Mc.s2_soak_scaled = self.Mc.s2_soak * self.Mc.s2_soak_scale
+                                if dt > 0.25:
+                                    None
+                                    #self.cprint("err:%s"%p)
+                                    #self.cprint("self.psi_switch_stpt:%s"%self.psi_switch_stpt)
+                                    #self.cprint("s2 soak scale:%s"%self.Mc.s2_soak_scale)
+                                self.Mc.s2(0, self.Mc.s2_soak) # stop the adjuster and allow soak time for fluctuations in pressure
+                            # fine pid
+                            #-----------------------------------------------
+                        
+                        
+                        
+                            #-----------------------------------------------
+                            #rough pid
+                            if self.psi_switch_to_rough == 1:
+                        
+                                if self.psi_switch_to_fine == 1: # reset values if switching to fine from rough pid
+                                    #self.cprint("1355 switched to psi rough")
+                                    i = 0
+                                    d = 0
+                                    self.outlet = 1
+                                    self.inlet = 1
+                                    self.psi_switch_to_fine = 0
+                        
+                                # determine if switch to fine is in order
+                                cif = 1 # used to bypass rough to get to fine
+                                if abs(p) < self.psi_switch_stpt and \
+                                   (p * pp < 0 or abs(self.psi_avg_der) < self.psi_fine_sw_der):
+                                    #self.cprint("self.psi_avg_der : %s  <  self.psi_fine_sw_der : %s"%(abs(self.psi_avg_der),self.psi_fine_sw_der))
+                                    #self.cprint("switching from rough to fine")
+                                    #self.cprint("1306 err : %s"%p)
+                                    cif = 0
+                                    self.psi_switch_to_fine = 1
+                                    #self.cprint("1353 in rough switching to fine")
+                                # determine if switch to fine is in order
+                                #self.cprint("rough")
+                        
+                                psi_rough_dbnd = 0 # reset rough dbnd
+                        
+                        
+                                """-----------------------------"""
+                                """-----------------------------"""
+                                '''outlet pid'''
+                                if cif == 1 and p < -self.psi_switch_stpt - psi_rough_dbnd and stpt != 0: # below setpoint
+                                    # switching from inlet to outlet
+                                    if self.inlet == 1 or first_inst == 1:
+                                        if first_inst == 1:
+                                            first_inst = 0
+                                        #self.cprint("1372 switched from inlet to outlet")
+                                        self.close_inlet()
+                                        self.inlet = 0
+                                        self.outlet = 1
+                                        d = 0
+                                        self.Mc.s2(0,0) # No need to operate adjuster until outside of rough range
+                                        time.sleep(self.psi_switch_soak / 1000)
+                                        self.init_outlet() # move inlet to angle just before pressure increase
+                                        kp = self.Mc.s1_Kp
+                                        ki = self.Mc.s1_Ki
+                                        kd = self.Mc.s1_Kd
+                        
+                                    if abs(p) > self.Mc.s1_intg_holdoff:
+                                        i = 0
+                                    if abs(i) > self.Mc.s1_max_intg:
+                                        i = (i/abs(i)) * self.Mc.s1_max_intg
+                        
+                                    pid = (kp * p) + (ki * i) + (kd * d)
+                                    pw = (pid / self.Mc.s1_pw_holdoff) * self.Mc.s1_move_range + (pid /abs(pid)) * self.Mc.s1_move_min
+                        
+                                    # move outlet valve
+                                    self.Mc.s1(pw)
+                                    #self.cprint("outlet pw : %s"%pw)
+                                    time.sleep(self.Mc.s1_soak/1000)
+                                    """outlet pid"""
+                                    """-----------------------------"""
+                        
+                        
+                        
+                                    """-----------------------------"""
+                                    """-----------------------------"""
+                                    ''' inlet pid'''
+                                elif cif == 1 and p > self.psi_switch_stpt + psi_rough_dbnd and stpt != 0: # below setpoint
+                                    # switching from outlet to inlet
+                                    if self.outlet == 1 or first_inst == 1:
+                                        if first_inst == 1:
+                                            first_inst = 0
+                                        #self.cprint("1434 switched from outlet to inlet")
+                                        self.close_outlet()
+                                        d = 0
+                                        i = 0
+                                        self.outlet = 0
+                                        self.inlet = 1
+                                        self.Mc.s2(0,0) # No need to operate adjuster until outside of rough range
+                                        time.sleep(self.psi_switch_soak / 1000)
+                                        self.init_inlet() # move inlet to angle just before pressure increase
+                                        kp = self.Mc.s0_Kp
+                                        ki = self.Mc.s0_Ki
+                                        kd = self.Mc.s0_Kd
+                                    # switching from outlet to inlet
+                        
+                                    if abs(p) > self.Mc.s0_intg_holdoff:
+                                        i = 0
+                                    if abs(i) > self.Mc.s0_max_intg:
+                                        i = (i/abs(i)) * self.Mc.s0_max_intg
+                        
+                                    pid = (kp * p) + (ki * i) + (kd * d)
+                                    pw = (pid / self.Mc.s0_pw_holdoff) * self.Mc.s0_move_range +  (pid /abs(pid)) *  self.Mc.s0_move_min
+                        
+                                    # move inlet valve
+                                    self.Mc.s0(-1 * pw)
+                                    time.sleep(self.Mc.s0_soak/1000)
+                                    ''' inlet pid'''
+                                    """-----------------------------"""
+                                    """-----------------------------"""
+                                if dt > 0.25:
+                                    #self.cprint("\np:%s  i:%s  d:%s"%(format(p,'.2f'),format(i,'.2f'),format(d,'.2f')))
+                                    #self.cprint("kp : %s   ki : %s   kd : %s"%(kp,ki,kd))
+                                    #self.cprint("(p):%s  (i):%s  (d):%s"%(format(kp * p,'.2f'),format(ki * i,'.2f'),format(kd * d,'.2f')))
+                                    #self.cprint("pid : %s"%pid)
+                                    #self.cprint("inlet pw : %s"%pw)
+                                    Dict = {'dest':'web_pid', 'p':p, 'i':i, 'd':d, 'kp':kp, 'ki':ki, 'kd':kd, 'kpp':kp*p, 'kii':ki*i, 'kdd':kd*d, 'pid': kp*p + ki*i + kd*d,'pw':pw}
+                                    self.send_web_pid(Dict)
+                                    
+                        
+                            else: #bogus numbers - do nothing
+                                pass
+                    else:
+                        pass
+                    var = self.check_input(0)
+                    if var == 0:
+                        self.psi_pid_run = 0
+                    time.sleep(0.05)
+                var = self.check_input(0)
+                if var == 0:
+                    self.psi_pid_run = 0
+                time.sleep(0.05)
+                #----------------main while loop---------------------
+        # psi_auto_pid failure
+        except:
+            self.cprint("Failure in auto psi pid")
+            self.Mc.rest_motors()
+            raise
+
+
+    def close_inlet(self):
+        self.Mc.s0(self.Mc.s0_max_angle)
+
+    def init_inlet(self):                                            
+        #self.cprint("initialize inlet angle")
+        self.Mc.s0(self.Mc.s0_init_angle - s_kit.servo[0].angle)
+
+    def save_all(self, user):
+        #print("save all 1413")
+        try:
+            self.Mc.put_adj_pos_value()
+        except:
+            self.cprint("Not able to put adjuster value")
+        else:
+            try:
+                self.Mc.update_adj_pos_display()
+            except:
+                self.cprint("not able to update adj position display")
+            if user == 1:
+                None
+                #self.cprint("Adjuster position saved (%s)"%self.Mc.adj_pos)
+                #self.send_web_message("Adjuster position saved (%s)"%self.Mc.adj_pos)
+
+    def close_outlet(self):
+        self.Mc.s1(self.Mc.s1_max_angle)
+
+    def init_outlet(self):
+        #self.cprint("initialize outlet angle")
+        self.Mc.s1(self.Mc.s1_init_angle - s_kit.servo[1].angle)
+    
+
+    def start_button(self, data):
+        val = float(data['data'])
+        self.pid_pause = 0
+        self.set_pid_btn(0)
+        if data['purpose'] == 'pid_start_inch':
+            self.cprint("Commanded inch setpoint = " + str(val))
+            self.psi_pid_run = 0
+            self.psi_full_auto = 0
+            self.psi_full_auto_cal = 0            
+            if val > -1:
+                self.Mc.vent_ctrl(1)
+                self.in_pid_run = 1
+                self.in_auto_pid(val)                         
+        elif data['purpose'] == 'pid_start_psi':        
+            self.cprint("Commanded psi setpoint = " + str(val))
+            self.in_pid_run = 0
+            self.in_full_auto = 0
+            self.in_full_auto_cal = 0            
+            if val > -1:
+                self.Mc.vent_ctrl(0)
+                self.psi_pid_run = 1
+                self.psi_auto_pid(val)                         
+                
+    def stop_button(self):
+        self.pid_pause = 0
+        self.set_pid_btn(1)
+        self.in_pid_run = 0
+        self.in_full_auto = 0
+        self.in_full_auto_cal = 0
+        self.psi_pid_run = 0
+        self.psi_full_auto = 0
+        self.psi_full_auto_cal = 0   
+        # have to have try / except because of super call
+        try:
+            self.s0(self.s0_max_angle)
+            self.s1(self.s1_max_angle)
+            self.s2(0,0)
+        except:
+            self.Mc.s0(self.Mc.s0_max_angle)
+            self.Mc.s1(self.Mc.s1_max_angle)
+            self.Mc.s2(0,0)            
+        self.send_web_message("Stop command received")
+        
+    def pause_button(self, data):
+        if data == 1:            
+            if self.in_pid_run == 1 or self.psi_pid_run == 1:
+                self.send_web_message("Auto operation paused")
+                self.pid_pause = 1
+                self.set_pid_btn(2)                
+            else:
+                self.set_pid_btn(1)                
+        elif data == 0:
+            if self.in_pid_run == 1 or self.psi_pid_run == 1:
+                self.set_pid_btn(0)
+                self.send_web_message("Auto operation resumed")                
+            else:
+                self.set_pid_btn(1)
+            self.pid_pause = 0                  
+
+    def set_pid_btn(self,val = 3): # toggle pid auto button display colors
+        if val == 0:
+            a = '1'
+            b = c = '0'
+        elif val == 1:
+            a = c = '0'
+            b = '1'            
+        elif val == 2:
+            a = b = '0'
+            c = '1'   
+        else:
+            a = b = c = '0'
+            
+        Dict =  {'dest':'btn_status', 'purpose':'pid_start', 'data':a}
+        self.qw24.put(Dict)              
+        Dict =  {'dest':'btn_status', 'purpose':'pid_stop', 'data':b}
+        self.qw24.put(Dict)              
+        Dict =  {'dest':'btn_status', 'purpose':'pid_pause', 'data':c}
+        self.qw24.put(Dict)                                       
+        
+    def send_marker(self, marker):
+        Dict = {'dest':'send_marker', 'data':marker}
+        self.mq(self.qw9, Dict)
+
+    def send_cal_low(self, marker):
+        #self.cprint("1604 send cal low")
+        Dict = {'dest':'send_cal_low', 'data':marker}
+        self.mq(self.qw18, Dict)
+
+    def send_cal_high(self, marker):
+        Dict = {'dest':'send_cal_high', 'data':marker}
+        self.mq(self.qw19, Dict)
+
+    def send_cal_mid(self, marker):
+        Dict = {'dest':'send_cal_mid', 'data':marker}
+        self.mq(self.qw20, Dict)
+            
+    def send_web_pid(self, Dict):
+        self.mq(self.qw8, Dict)
+
+    def ping_web(self):
+        Dict = {'dest':'ping_web', 'data':1}
+        self.mq(self.qw10, Dict)
+
+    def ft2(self, data, precision):
+        if precision == 2:
+            return (format(data,'.2f'))
+
+    def cprint(self, msg = ""):
+        if msg != self.prev_msg:
+            print("%s  (ctrl%s)"%(msg,inspect.currentframe().f_back.f_lineno))
+            self.prev_msg = msg
+
+    def init_kpv_to_val(self):
+        self.psi_switch_stpt_divisor = self.Mc.Kpv[41]
+        self.psi_switch_soak = self.Mc.Kpv[18]
+        self.psi_fine_dbnd = self.Mc.Kpv[53]
+        self.adj_max_pos = self.Mc.Kpv[35]        
+        self.max_rdg_fail = self.Mc.Kpv[0]        
+        self.pccu_count_time_mod = self.Mc.Kpv[1]        
+        self.in_marker_time = self.Mc.Kpv[2] # allow pccu to catch up        
+        self.in_stable_dbnd = self.Mc.Kpv[3] # deadband to determine inch readings stabilized enough to send marker
+        self.in_stable_time = self.Mc.Kpv[4] # number of seconds with inch readings stable before sending marker
+        self.in_marker_countdown = self.in_stable_time       
+        self.in_stable_time_pccu_mod = self.Mc.Kpv[5]
+        self.in_stable_der = self.Mc.Kpv[39]        
+        self.in_stpt_divisions = self.Mc.Kpv[6] # number of total in markers including zero
+        self.in_stpt_cal_divisions = self.Mc.Kpv[7] # number of total in markers including zero        
+        self.psi_marker_time = self.Mc.Kpv[13] # allow pccu to catch up        
+        self.psi_stable_dbnd = self.Mc.Kpv[14] # deadband to determine inch readings stabilized enough to send marker
+        self.psi_stable_time = self.Mc.Kpv[15] # number of seconds with inch readings stable before sending marker        
+        self.psi_marker_countdown = self.psi_stable_time                         
+        self.psi_stpt_divisions = self.Mc.Kpv[16] # number of total in markers including zero
+        self.psi_stpt_cal_divisions = self.Mc.Kpv[17] # number of total in markers including zero        
+        self.psi_fine_sw_der = self.Mc.Kpv[23]
+        self.psi_der_cycle_time = self.Mc.Kpv[52]
+        self.psi_mtr_inrush_time = self.Mc.Kpv[64] # initial time to ignore inrush current to psi motors   
+
+
+    def check_input(self, val):
+        #self.cprint("cntrl.py running")
+        #self.cprint("check input")
+        run = 1
+        if self.in_pid_run == 0 and self.in_stop_one_shot == 0:
+            #self.cprint("one shot stop")
+            self.in_stop_one_shot = 1
+            self.Mc.rest_motors()
+            run = 0
+        if self.rdg_fail_count > self.max_rdg_fail and self.in_pid_run == 1:
+            self.in_pid_run = 0
+            self.Mc.rest_motors()
+            
+        if not self.q1.empty():
+            data = self.q1.get()
+            self.Mc.adj_pos = 0
+        if not self.q2.empty():
+            data = self.q2.get()
+            self.close_inlet()
+        if not self.q3.empty():
+            data = self.q3.get()
+            self.close_outlet()            
+        if not self.q4.empty():
+            data = self.q4.get() 
+            self.init_inlet()           
+        if not self.q5.empty(): # cntrl.py init_outlet
+            data = self.q5.get()
+            self.init_outlet()
+        if not self.q6.empty():
+            data = self.q6.get()
+            if data['purpose'] == 're_center':
+                self.recenter_cmd(data['data'])
+            elif data['purpose'] == 'stop':
+                self.Mc.s2(0,0)
+        if not self.q7.empty():
+            data = self.q7.get()
+            d = int(data['data'])
+            self.Mc.s0((d/abs(d))*self.Mc.s0_manual_pw)
+        if not self.q8.empty():
+            data = self.q8.get()
+            d = int(data['data'])
+            self.Mc.s1((d/abs(d))*self.Mc.s1_manual_pw)
+        if not self.q9.empty():
+            data = self.q9.get()
+            self.Mc.equalizer_ctrl(float(data['data']))
+        if not self.q10.empty():
+            data = self.q10.get()
+            self.web_run(data['data'])
+        if not self.q11.empty():
+            data = self.q11.get()
+            self.Mc.vent_ctrl(float(data['data']))
+        if not self.q12.empty():
+            data = self.q12.get()
+            self.eq_alarm(data['data'])
+        if not self.q13.empty():
+            data = self.q13.get()
+            self.vent_alarm(data['data'])
+        if not self.q14.empty():
+            data = self.q14.get()
+            self.in_vent_alarm(data['data'])
+        if not self.q15.empty():
+            data = self.q15.get()
+            self.full_auto_checks(data['data'])
+        if not self.q16.empty():
+            data = self.q16.get()
+            self.full_psi_auto_checks(data['data'])
+        if not self.q17.empty():
+            data = self.q17.get()
+            self.in_full_auto_cal_f(data['data'])
+        if not self.q18.empty():
+            data = self.q18.get()
+            self.cprint(data)
+            self.next_pt(data['data'])
+        if not self.q19.empty():
+            data = self.q19.get()
+            self.prev_pt(data['data'])
+        if not self.q20.empty():
+            data = self.q20.get()
+            self.set_pccu_count(data['data'])
+        if not self.q21.empty():
+            data = self.q21.get()
+            self.stop_pid(data['data'])            
+        if not self.q22.empty():
+            data = self.q22.get()
+        if not self.q23.empty():
+            data = self.q23.get()                                     
+        if not self.q24.empty():
+            data = self.q24.get()
+            self.manual_control(data['data'])                                  
+        if not self.q25.empty(): # kpv mod request from another process
+            data = self.q25.get()
+            row = data['row']
+            val = data['val']
+            self.Mc.mod_kpv_file_entry(row, val)   
+            self.init_kpv_to_val()
+            self.Mc.init_kpv_to_val()            
+        if not self.q26.empty():
+            data = self.q26.get()
+            Dict =  {'dest':'btn_status', 'purpose':'adj_up', 'data':'0'}
+            self.qw24.put(Dict)  
+            Dict =  {'dest':'btn_status', 'purpose':'adj_down', 'data':'0'}                                            
+            self.qw24.put(Dict)                          
+            self.Mc.s2(0,0)
+            self.check_adj = 0
+            self.Mc.rest_motors()                                              
+        if not self.q27.empty(): # start button
+            data = self.q27.get()
+            self.start_button(data)
+        if not self.q28.empty(): # stop button
+            data = self.q28.get()
+            self.stop_button()
+        if not self.q29.empty(): # pause button
+            data = self.q29.get()
+            self.pause_button(int(data['data']))
+                        
+        # settings.py queue
+        if not self.qk1.empty(): # request from web or kpv file
+            data = self.qk1.get()
+            self.Mc.get_kpv_file()
+            self.Mc.send_kpv()       
+        if not self.qk3.empty(): # change made to kpv on web
+            data = self.qk3.get()
+            data = data['data']
+            row = int(data['row'])
+            val = float(data['val'])
+            #self.cprint("cntrl.py 1569  row : %s   val : %s"%(row, val))
+            self.Mc.mod_kpv_file_entry(row, val)                                                         
+            self.init_kpv_to_val()
+            self.Mc.init_kpv_to_val()
+
+        # motor_current.py queue
+        if not self.qm7.empty():            
+            self.Mc.Kpv = self.qm7.get()
+            
+        # serial_worker.py queue
+        if not self.qs9.empty(): # request from serialworker.py for kpv file  
+            data = self.qs9.get()
+            if data == 1:
+                self.Mc.get_kpv_file()
+                self.mq(self.qs10, self.Mc.Kpv)
+            
+        if val == 1:
+            time.sleep(0.1)
+            self.check_input(0)
+        if abs(self.Mc.adj_pos) > self.adj_max_pos: #Need to re-center adjuster
+            #self.cprint("command to re-center adjuster")
+            self.send_web_message("Adjuster max position reached")
+            self.Mc.center_inch_adjuster()
+        return run
+
+    def check_next_pt(self):
+        np = 0
+        #self.cprint("in check next")
+        if self.next_point == 1:
+            #self.cprint("1681 check next")
+            np = "next_point"
+            self.next_point = 0
+        return np
+
+    def check_prev_pt(self):
+        pp = 0
+        #self.cprint("in check prev")
+        if self.prev_point == 1:
+            #self.cprint("1690 check prev")
+            pp = "prev_point"
+            self.prev_point = 0
+        return pp
+
+    def mq(self, q, val, block = False, timeout = 0.05): # verify queue transmission
+        if block == 1:
+            block = True
+        try:
+            self.q = q
+            try:
+                while self.q.full():
+                    self.q.get(block, timeout)
+            except:
+                None
+            else:
+                try:
+                    self.q.put(val, block, timeout)         
+                except:
+                    None
+        except:
+            None
+           
+    def run(self):
+        self.cprint("cntrl.py running")
+        self.Mc = Pid_class(self.q25, self.q26, self.qw3, self.qw4, self.qw11, self.qw12, self.qw13, self.qw14, self.qw15, \
+        self.qw16, self.qw21, self.qw22, self.qw23, self.qw24, self.qw25, self.qw26, self.qw27, self.qw28, \
+        self.qw29, self.qw30, self.qw31, self.qw32, self.qw33, self.qw34, self.qw35, self.qw36, self.qw37,\
+        self.qw38, self.qw39, self.qw40, self.qm1, self.qm2, self.qm3, self.qm4, self.qm6, self.qm7, self.qs1, \
+        self.qs2, self.qs3, self.qs9, self.qs10, self.qs11, self.qk2, self.qt4, self.qb1, self.qb3)  # pid object
+        
+        self.Mc.get_kpv_file()
+        self.Mc.print_duty()
+        while len(self.Mc.Kpv) == 0:
+            #self.cprint("waiting %s"%time.time())
+            None                    
+        self.init_kpv_to_val()        
+        self.Mc.rest_motors()                
+        
+        self.check_input(0)        
+        while True: #self.in_pid_run == 0:
+            try:
+                #print("cntrl.py  %s"%time.time())
+                if time.time() - self.save_st > self.save_dt:
+                    self.save_st = time.time()
+                    self.save_all(0)
+                    if abs(self.Mc.adj_pos) > self.adj_max_pos + 200:
+                        self.cprint("Adjuster max position reached")
+                        self.send_web_message("Adjuster max position reached")
+                        self.Mc.center_inch_adjuster()
+                if self.web_running == 0 and time.time() - self.initial_web_update_st > self.web_dt:
+                    self.initial_web_update_st = time.time()
+                    self.ping_web() # see if ui is connected yet
+
+                else:
+                    None     
+                self.check_input(0)                     
+            except:
+                raise
+            time.sleep(0.05)
+        time.sleep(0.05)
+            
+            
+            
+class Pid_class(Controls): # pid class
+
+    def __init__(self, q25, q26, qw3, qw4, qw11, qw12, qw13, qw14, qw15, qw16, qw21, qw22, qw23, \
+                       qw24, qw25, qw26, qw27, qw28, qw29, qw30, qw31, qw32, qw33, qw34, \
+                       qw35, qw36, qw37, qw38, qw39, qw40, qm1, qm2, qm3, qm4, qm6, qm7, qs1, \
+                       qs2, qs3, qs9, qs10, qs11, qk2, qt4, qb1, qb3):
+        
+        self.q25 = q25 # send kpv from py processes to cntrl.py       
+        self.q26 = q26 # rest motors
+       
+        self.qw4 = qw4 # NA
+        self.qw3 = qw3 # inlet_display
+        self.qw11 = qw11 # in_vent_status
+        self.qw12 = qw12 # vent_status
+        self.qw13 = qw13 # eq_status
+        self.qw14 = qw14 # outlet_status
+        self.qw15 = qw15 # adj_pos_display
+        self.qw16 = qw16 # stpt_display
+        self.qw21 = qw21 # send_web_message for cntrl.py
+        self.qw23 = qw23 # send_web_message for serialworker.py
+        self.qw24 = qw24 # btn_status
+        self.qw25 = qw25 # pid_running_status
+        self.qw26 = qw26 # NA
+        self.qw27 = qw27 # NA
+        self.qw28 = qw28 # NA
+        self.qw29 = qw29 # NA
+        self.qw30 = qw30 # NA
+        self.qw31 = qw31 # NA
+        self.qw32 = qw32 # NA
+        self.qw33 = qw33 # NA
+        self.qw34 = qw34 # NA
+        self.qw35 = qw35 # NA
+        self.qw36 = qw36 # NA
+        self.qw37 = qw37 # NA
+        self.qw38 = qw38 # NA
+        self.qw39 = qw39 # NA
+        self.qw40 = qw40 # NA
+
+        self.qm1 = qm1
+        self.qm2 = qm2
+        self.qm3 = qm3
+        self.qm6 = qm6 # send kpv list to motor_current.py
+        self.qm4 = qm4
+        self.qs1 = qs1
+        self.qs2 = qs2
+        self.qs3 = qs3
+        self.qs9 = qs9
+        self.qs10 = qs10
+        self.qs11 = qs11
+
+        self.qk2 = qk2
+        
+        self.qt4 = qt4 # send kpv file to tflow_data.py
+        
+        self.qb1 = qb1 # ??
+        self.qb3 = qb3 # send kpv file to baro_data.py
+        
+        self.prev_msg = ""        
+        self.Kpv = []
+        self.get_kpv_file()
+        self.init_kpv_to_val()
+        self.send_kpv()
+        
+        self.web_prev_msg = ""
+        self.prev_msg = ""
+        
+        self.adjuster_direction = 0
+        
+        self.psi_avg_pw_array = []
+        for i in range(int(self.psi_avg_pw_count)): # set up derivative average array
+            self.psi_avg_pw_array.append(0)
+        self.psi_avg_pw = sum(self.psi_avg_pw_array) / len(self.psi_avg_pw_array) # average derivative ofer a number of cycles
+
+        self.psi_cycle_count_ST = 0
+        self.psi_cycle_count_LT = 0
+
+
+        self.psi_avg_der_ST_array = []
+        self.psi_avg_der_LT_array = []
+        for i in range(self.psi_cycles_per_div_ST): # set up derivative average array
+            self.psi_avg_der_ST_array.append(0)
+        for i in range(self.psi_cycles_per_div_LT): # set up derivative average array
+            self.psi_avg_der_LT_array.append(0)
+        if len(self.psi_avg_der_ST_array) > 0:
+            self.psi_avg_der_ST = sum(self.psi_avg_der_ST_array) / len(self.psi_avg_der_ST_array) # average derivative ofer a number of cycles
+            #self.cprint("Initial psi_avg_der_ST : %s"%self.psi_avg_der_ST)
+        if len(self.psi_avg_der_LT_array) > 0:
+            self.psi_avg_der_LT = sum(self.psi_avg_der_LT_array) / len(self.psi_avg_der_LT_array) # average derivative ofer a number of cycles
+            #self.cprint("Initial psi_avg_der_LT : %s"%self.psi_avg_der_LT)
+
+        self.get_adj_pos_value()
+        self.prev_adj_pos = 0
+
+    def get_kpv_file(self):
+        self.Kpv = []
+        self.Kpv_bu = []
+        try: # get the previous "Kp" values
+            self.file_o = open("settings/Kpv.txt","r+")
+        except:
+            self.cprint("Not able to open the Kpv.txt file")
+        else: # was able to open the file
+            try:
+                rd_all = self.file_o.readlines() # read in all lines of file
+            except:
+                self.file_o.close()
+                self.cprint("Kpv file did not read in")
+            else: # all lines read in
+                self.file_o.close()
+                if len(rd_all) < 2:
+                    self.cprint("Kpv file was empty - importing backup file")
+                    try: # import backup kpv file
+                        shutil.copy('settings/Kpv_bu.txt', 'settings/Kpv.txt')
+                    except:
+                        self.cprint("Import of Kpv backup file failed")
+                    else:
+                        None
+                        #self.cprint("Kpv backup file imported successfully")                    
+                        self.get_kpv_file()
+                    
+                for i, val in enumerate(rd_all):
+                    try:
+                        self.Kpv_bu.append(val) # temporary list to hold full file with descriptors
+                    except:
+                        self.cprint("value on line " + str(i) + " did not import")
+                for i, val in enumerate(self.Kpv_bu):
+                     if i % 2 != 0:
+                         self.Kpv.append(float(val))
+            #self.cprint("cntrl 1739 - len(self.Kpv) : %s"%len(self.Kpv))
+                         
+    def mod_kpv_file_entry(self, index, val):
+        #print("mod kpv file entry ([%s]:%s)1864"%(index,val))
+        self.get_kpv_file() # get kpv text file
+        self.Kpv[index] = val # update local process kpv entry
+        self.put_kpv_file() # put kpv text file 
+        self.send_kpv() # send new kpv to web and processes        
+
+    def put_kpv_file(self):
+        self.Kpv_bu = []
+        try: # get the previous "Kp" values
+            self.file_o = open("settings/Kpv.txt","r+")
+        except:
+            self.cprint("Not able to open the Kpv.txt file")
+        else: # was able to open the file
+            try:
+                rd_all = self.file_o.readlines() # read in all lines of file
+            except:
+                self.cprint("Kpv file did not read in")
+            else: # all lines read in
+                for i, val in enumerate(rd_all):
+                    self.Kpv_bu.append(val)
+                self.file_o.truncate(0)
+                self.file_o.close()
+                try:
+                    self.file_o = open("settings/Kpv.txt","r+")
+                except:
+                    self.cprint("Kpv file did not read in")
+                else:
+                    j = 0
+                    for i in range(len(self.Kpv_bu)):
+                        if i % 2 == 0:
+                            self.file_o.write(str(self.Kpv_bu[i]))
+                        else:
+                            self.file_o.write(format(self.Kpv[j],'.2f') + "\n")
+                            j += 1
+                    self.file_o.close()
+                    try: # backup kpv file
+                        shutil.copy('settings/Kpv.txt', 'settings/Kpv_bu.txt')
+                    except:
+                        raise
+                        self.cprint("Backup of Kpv file failed")
+                    else:
+                        None
+                        #self.cprint("Kpv backup complete")
+                         
+    def send_kpv(self): # send kpv settings to web settings page
+        self.mq(self.qk2, self.Kpv_bu) # send kpv to web  
+        self.mq(self.qs10, self.Kpv) # update kpv in serialworker.py        
+        self.mq(self.qt4, self.Kpv) # update kpv in tflow_data.py  
+        self.mq(self.qb3, self.Kpv) # update kpv in baro_data.py          
+        self.mq(self.qm6, self.Kpv) # update kpv in motor_current.py                                 
+
+    def init_kpv_to_val(self):        
+        self.adjuster_runout = self.Kpv[38]
+        self.adj_min_move_amp = self.Kpv[40]
+        self.s2_nonstop = self.Kpv[78]
+        self.psi_avg_pw_count = self.Kpv[20] # number of cycles to average
+        self.psi_cycles_per_div_ST = int(self.Kpv[22])
+        self.psi_cycles_per_div_LT = int(self.Kpv[42])        
+        self.psi_cycle_reset_time_ST = self.Kpv[22]
+        self.psi_cycle_reset_time_LT = self.Kpv[42]
+        self.s2_up_spd = self.Kpv[36]
+        self.s2_down_spd = self.Kpv[37]
+        self.s2_up_spd_max = self.Kpv[43]
+        self.s2_down_spd_min = self.Kpv[44]
+        self.s2_up_spd_min = self.Kpv[58]
+        self.s2_down_spd_max = self.Kpv[59]
+        self.s2_min = self.Kpv[25]
+        self.s2_max = self.Kpv[26]
+        self.s2_max_intg = self.Kpv[30]
+        self.s2_intg_holdoff = self.Kpv[32]
+        self.s2_soak = self.Kpv[31]
+        self.s2_soak_scaled = self.s2_soak
+        self.s2_rng = self.s2_max - self.s2_min
+        self.s2_Kp = self.Kpv[27]
+        self.s2_Ki = self.Kpv[28]
+        self.s2_Kd = self.Kpv[29]
+        self.s2_pw = self.s2_min
+
+        self.m2_min = self.Kpv[60]
+        self.m2_max = self.Kpv[61]
+        self.m2_level = self.Kpv[57]
+
+        self.m3_min = self.Kpv[45]
+        self.m3_max = self.Kpv[46]
+        self.m3_rng = self.m3_max - self.m3_min
+        self.m3_max_intg = self.Kpv[50]
+        self.m3_soak = self.Kpv[51]
+        self.m3_soak_scaled = self.m3_soak
+        self.m3_Kp = self.Kpv[47]
+        self.m3_Ki = self.Kpv[48]
+        self.m3_Kd = self.Kpv[49]
+        self.m3_level = self.Kpv[56]
+        self.m3_pw = self.m3_min
+        self.m3_manual_pw = self.Kpv[78]
+        self.prev_in_vent_status = -1
+
+        self.m4_min = self.Kpv[60]
+        self.m4_max = self.Kpv[61]
+        self.m4_rng = self.m4_max - self.m4_min
+        self.m4_max_intg = self.Kpv[65]
+        self.m4_soak = self.Kpv[66]
+        self.m4_soak_scaled = self.m4_soak
+        self.m4_soak_default = self.m4_soak
+        self.m4_Kp = self.Kpv[62]
+        self.m4_Ki = self.Kpv[63]
+        self.m4_Kd = self.Kpv[64]
+        self.m4_level_min = self.Kpv[68]
+        self.m4_level_max = self.Kpv[69]
+        self.m4_level_rng = self.m4_level_max - self.m4_level_min
+        self.m4_pw = self.m4_min
+        self.m4_off_delay = self.Kpv[72]
+
+        self.m5_min = self.Kpv[75]
+        self.m5_max = self.Kpv[76]
+        self.m5_rng = self.m5_max - self.m5_min
+        self.prev_eq_status = -1
+
+        self.m6_min = self.Kpv[91]
+        self.m6_max = self.Kpv[92]
+        self.m6_rng = self.m6_max - self.m6_min
+        self.prev_vent_status = -1
+
+        self.s1_manual_pw = self.Kpv[132]
+        self.s1_move_min = self.Kpv[107] # min angle movement
+        self.s1_move_max = self.Kpv[108] # max angle movement
+        self.s1_move_range = self.s1_move_max - self.s1_move_min
+        self.s1_default_angle = self.Kpv[118] # default angle
+        self.s1_max_intg = self.Kpv[112]
+        self.s1_intg_holdoff = self.Kpv[117]
+        self.s1_soak = self.Kpv[113]
+        self.s1_Kp = self.Kpv[109]
+        self.s1_Ki = self.Kpv[110]
+        self.s1_Kd = self.Kpv[111]
+        self.s1_min_angle = self.Kpv[114]
+        self.s1_max_angle = self.Kpv[115]
+        self.s1_init_angle = self.Kpv[119]
+        self.s1_prev_angle = 0
+        self.s1_pw_holdoff = self.Kpv[116]
+
+
+        self.s0_manual_pw = self.Kpv[143]
+        self.s0_default_angle = self.Kpv[156] # default angle
+        self.s0_max_intg = self.Kpv[150]
+        self.s0_intg_holdoff = self.Kpv[155]
+        self.s0_soak = self.Kpv[151]
+        self.s0_Kp = self.Kpv[147]
+        self.s0_Ki = self.Kpv[148]
+        self.s0_Kd = self.Kpv[149]
+        self.s0_min_angle = self.Kpv[152]
+        self.s0_max_angle = self.Kpv[153]
+        self.s0_angle_range = self.s0_max_angle - self.s0_min_angle
+        self.s0_move_min = self.Kpv[144]
+        self.s0_move_max = self.Kpv[145]
+        self.s0_move_range = self.s0_move_max - self.s0_move_min
+        self.s0_init_angle = self.Kpv[157]
+        self.s0_prev_angle = 0
+        self.s0_pw_holdoff = self.Kpv[154]     
+        
+    def cprint(self, msg = ""):
+        if msg != self.prev_msg:
+            print("%s  (ctrl%s)"%(msg,inspect.currentframe().f_back.f_lineno))
+            self.prev_msg = msg
+
+    def center_inch_adjuster(self):
+        self.check_adj = 0
+        self.mq(self.qm3,1)
+        while abs(self.adj_pos) > 200:# and self.in_pid_run == 1 and self.in_pid_one_shot == 1:
+            if self.adj_pos > 0:
+                self.s2(self.s2_down_spd, 100)
+            elif self.adj_pos < 0:
+                self.s2(self.s2_up_spd, 100)
+        self.s2(0,1) # set adjuster free spin
+        self.mq(self.qm3,0)
+        super().set_in_rough_fine(0) # switch to rough
+        super().set_psi_rough_fine(0) # switch to rough
+
+    def static_center_inch_adjuster(self):
+        self.check_adj = 0
+        self.mq(self.qm3,1)
+        while abs(self.adj_pos) > 50:
+            if self.adj_pos > 50:
+                self.s2(self.s2_down_spd, 100)
+            elif self.adj_pos < -50:
+                self.s2(self.s2_up_spd, 100)
+        self.s2(0,1) # set adjuster free spin
+        self.mq(self.qm3,0)
+
+    def check_ma(self):
+        cont = 1
+        if not self.qm4.empty():
+            try:
+                data = self.qm4.get()
+                if data['purpose'] == 'stop':
+                    self.rest_motors()
+                    send_web_message("Max ma - Adjuster  stopped")
+                    cont = 0
+                    return cont
+            except:
+                self.cprint("exception at check_ma")
+                cont = 0
+                return cont
+        return cont
+        
+    def get_adj_pos_value(self):
+        self.get_kpv_file()
+        self.adj_pos = self.Kpv[198]
+
+    def s2(self, spd, pw): # adjuster continuous servo
+        btn_on = 0
+        if spd == 0 or spd == None: #allows for soak time
+            pass
+        elif pw  < self.s2_min:
+            pw = self.s2_min
+        elif pw > self.s2_max:
+            if pw == self.adjuster_runout:
+                self.mq(self.qm3, 1)
+            elif pw == self.s2_nonstop:
+                None
+            else:
+                pw = self.s2_max
+        if pw <0:
+            pw = 0
+
+        self.prev_adjuster_direction = self.adjuster_direction
+        if spd != None and spd != 0:
+            self.adjuster_direction = (spd/abs(spd)) * 1
+            self.mq(self.qm1, self.adjuster_direction)
+
+        if spd != None and spd != 0:
+            btn_on = 1
+            if spd > 0:
+                Dict =  {'dest':'btn_status', 'purpose':'fine_up', 'data':'1'}
+            elif spd < 0:
+                Dict =  {'dest':'btn_status', 'purpose':'fine_down', 'data':'1'}       
+            self.mq(self.qw24,Dict)  
+        s_kit.continuous_servo[2].throttle = spd
+        cl = 1
+        st = time.time()
+        while cl == 1:
+            dt = time.time() - st
+            cl = self.check_ma();
+            if dt > pw / 1000:
+                cl = 0
+                break
+        s_kit.continuous_servo[2].throttle = 0
+        if btn_on == 1:
+            Dict =  {'dest':'btn_status', 'purpose':'fine_up', 'data':'0'}
+            self.qw24.put(Dict)  
+            Dict =  {'dest':'btn_status', 'purpose':'fine_down', 'data':'0'}                                            
+            self.qw24.put(Dict)  
+
+        if spd != None and spd != 0:
+            if pw != self.adjuster_runout:
+                self.adj_pos = self.adj_pos + ((spd/abs(spd)) * ((time.time() - st) * 1000))
+                self.update_adj_pos_display()              
+            else:
+                self.adj_pos = 0
+                self.update_adj_pos_display()
+                self.mq(self.qm3, 0)
+        else:
+            None
+            #self.adjuster_direction = 0
+        self.mq(self.qm2, self.adj_pos)                              
+
+    def m2(self, spd, pw): # inlet solenoid - only used to put at rest from rest_all_motors()
+        if spd == 0 or spd == None: #allows for soak time
+            pass
+        if pw > self.m2_max:
+            pw = self.m2_max
+        #self.cprint("inlet sol : %s"%pw)
+        kit.motor2.throttle = spd
+        time.sleep(pw/1000)
+
+    def m3(self, spd, pw): # vent solenoid
+        if spd == 0 or spd == None:
+            Dict =  {'dest':'btn_status', 'purpose':'coarse_down', 'data':'0'}
+            self.mq(self.qw24,Dict)             
+        else:
+            Dict =  {'dest':'btn_status', 'purpose':'coarse_down', 'data':'1'}
+            self.mq(self.qw24,Dict)             
+        if pw == self.m3_manual_pw or pw == self.m3_soak:
+            None
+        elif pw > self.m3_max:
+            pw = self.m3_max
+        kit.motor3.throttle = spd
+        time.sleep(pw/1000)
+        # send in_vent status to serialworker
+        Dict = {'dest':'qs3', 'purpose':'in_vent_status', 'data':self.get_pwm_state(3,1)}
+        self.mq(self.qs3, Dict)
+            
+    def m4(self, spd, pw): # air pump
+        if spd != None and spd > 0:
+            Dict =  {'dest':'btn_status', 'purpose':'coarse_up', 'data':'1'}
+            self.mq(self.qw24,Dict)
+        if spd == 0 or spd == None: #allows for soak time
+            pass
+        if pw > self.m4_max:
+            pw = self.m4_max
+        kit.motor4.throttle = spd
+        kit.motor2.throttle = 0.9
+        time.sleep(pw/1000)
+        kit.motor2.throttle = 0
+        #time.sleep(self.m4_off_delay / 1000)
+        kit.motor4.throttle = 0
+        kit.motor4.throttle = None
+        kit.motor2.throttle = None
+        Dict =  {'dest':'btn_status', 'purpose':'coarse_up', 'data':'0'}
+        self.mq(self.qw24,Dict)
+        time.sleep(self.m4_soak_scaled/1000)
+
+    def m5(self, spd, pw): # equalizer
+        if spd == 0 or spd == None:
+            Dict =  {'dest':'btn_status', 'purpose':'open_eq', 'data':'1'}
+            self.mq(self.qw24,Dict,1)             
+            Dict =  {'dest':'btn_status', 'purpose':'close_eq', 'data':'0'}
+            self.mq(self.qw24,Dict,1)             
+        else:
+            Dict =  {'dest':'btn_status', 'purpose':'open_eq', 'data':'0'}
+            self.mq(self.qw24,Dict,1)             
+            Dict =  {'dest':'btn_status', 'purpose':'close_eq', 'data':'1'}
+            self.mq(self.qw24,Dict,1)             
+        if spd == 0 or spd == None:
+            spd = 0
+        if pw > self.m5_max:
+            pw = self.m5_max
+        p_kit.motor1.throttle = spd
+        # eq status for web and serialworker
+        Dict = {'dest':'qs1', 'purpose':'eq_status', 'data':self.get_pwm_state(5,1)}
+        self.mq(self.qs1, Dict)            
+
+    def m6(self, spd, pw): # psi vent
+        if spd == 0 or spd == None:
+            Dict =  {'dest':'btn_status', 'purpose':'open_vent', 'data':'0'}
+            self.mq(self.qw24,Dict,1)             
+            Dict =  {'dest':'btn_status', 'purpose':'close_vent', 'data':'1'}
+            self.mq(self.qw24,Dict,1)             
+        else:
+            Dict =  {'dest':'btn_status', 'purpose':'open_vent', 'data':'1'}
+            self.mq(self.qw24,Dict,1)             
+            Dict =  {'dest':'btn_status', 'purpose':'close_vent', 'data':'0'}
+            self.mq(self.qw24,Dict,1)             
+        if pw > self.m6_max:
+            pw = self.m6_max
+        p_kit.motor2.throttle = spd
+        # psi vent status for web and serialworker
+        Dict = {'dest':'qs2', 'purpose':'vent_status', 'data':self.get_pwm_state(6,1)}
+        self.mq(self.qs2,Dict)
+            
+    def s0(self, angle): # inlet servo
+        if angle  < 0:
+            Dict =  {'dest':'btn_status', 'purpose':'inlet_bump_up', 'data':'1'}
+            self.mq(self.qw24,Dict,1)             
+        elif angle  > 0:
+            Dict =  {'dest':'btn_status', 'purpose':'inlet_bump_down', 'data':'1'}
+            self.mq(self.qw24,Dict,1)                             
+        fpos = s_kit.servo[0].angle + angle
+        if fpos > self.s0_max_angle:
+            s_kit.servo[0].angle = self.s0_max_angle
+        elif fpos < self.s0_min_angle:
+            s_kit.servo[0].angle = self.s0_min_angle
+        else:
+            s_kit.servo[0].angle = fpos
+        Dict =  {'dest':'btn_status', 'purpose':'inlet_bump_up', 'data':'0'}
+        self.mq(self.qw24,Dict,1)
+        Dict =  {'dest':'btn_status', 'purpose':'inlet_bump_down', 'data':'0'}
+        self.mq(self.qw24,Dict,1)                                 
+        
+        # web inlet position display
+        state = s_kit.servo[0].angle
+        Dict = {'dest':'inlet_display', 'inlet_angle':str(int(state))}
+        self.mq(self.qw3, Dict)
+
+    def s1(self, angle): # outlet servo
+        if angle  < 0:
+            Dict =  {'dest':'btn_status', 'purpose':'outlet_bump_up', 'data':'1'}
+            self.mq(self.qw24,Dict,1)             
+        elif angle  > 0:
+            Dict =  {'dest':'btn_status', 'purpose':'outlet_bump_down', 'data':'1'}
+            self.mq(self.qw24,Dict,1)                                     
+        fpos = s_kit.servo[1].angle + angle
+        if fpos > self.s1_max_angle:
+            s_kit.servo[1].angle = self.s1_max_angle
+        elif fpos < self.s1_min_angle:
+            s_kit.servo[1].angle = self.s1_min_angle
+        else:
+            s_kit.servo[1].angle = fpos
+        Dict =  {'dest':'btn_status', 'purpose':'outlet_bump_up', 'data':'0'}
+        self.mq(self.qw24,Dict,1)
+        Dict =  {'dest':'btn_status', 'purpose':'outlet_bump_down', 'data':'0'}
+        self.mq(self.qw24,Dict,1)                                 
+
+        # web outlet position display
+        state = s_kit.servo[1].angle
+        Dict = {'dest':'outlet_display', 'outlet_angle':str(int(state))}
+        self.mq(self.qw14, Dict)
+        
+    def rest_motors(self):
+        self.m2(None,0)
+        self.m3(None,0)
+        self.m4(None,0)
+        self.m5(None,0)
+        self.m6(None,0)
+        super().stop_button()
+        
+    def equalizer_ctrl(self, val):
+        if val == 1: # close the equalizer
+            self.m5(0.9,0)
+        else:
+            self.m5(None,0)
+
+    def vent_ctrl(self, val): # psi vent
+        if val == 1:
+            self.m6(1,0)
+        elif val == 0:
+            self.m6(None,0)
+
+    def in_vent_ctrl(self, val): # psi vent
+        #self.cprint("in vent ctrl")
+        state = kit.motor3.throttle
+        if state == None or state == 0:
+            state = 0
+        else:
+            state = 1
+        if val == 1 and state == 0:
+            self.m3(self.m3_level,0)
+            #kit.motor3.throttle = 1 # close the inch vent
+        elif val == 0 and state == 1:
+            self.m3(None,0)
+            #kit.motor3.throttle = None # open the inch vent
+
+    def send_web_message(self, var):
+        if var != self.web_prev_msg:
+            Dict = {'dest':'web_message', 'val':var}
+            self.qw21.put(Dict)
+            self.web_prev_msg = var
+
+    def init_web_valve_states(self): # show correct state of buttons on web
+        st = self.get_pwm_state(5)
+        if st == None or st == 0:
+            Dict =  {'dest':'btn_status', 'purpose':'open_eq', 'data':'1'}
+            self.mq(self.qw24,Dict)                     
+            Dict =  {'dest':'btn_status', 'purpose':'close_eq', 'data':'0'}
+            self.mq(self.qw24,Dict)                                 
+        else:
+            Dict =  {'dest':'btn_status', 'purpose':'open_eq', 'data':'0'}
+            self.mq(self.qw24,Dict)                                 
+            Dict =  {'dest':'btn_status', 'purpose':'close_eq', 'data':'1'}
+            self.mq(self.qw24,Dict)                                             
+            
+        st = self.get_pwm_state(6)
+        if st == None or st == 0:
+            Dict =  {'dest':'btn_status', 'purpose':'open_vent', 'data':'0'}
+            self.mq(self.qw24,Dict)                     
+            Dict =  {'dest':'btn_status', 'purpose':'close_vent', 'data':'1'}
+            self.mq(self.qw24,Dict)                                 
+        else:
+            Dict =  {'dest':'btn_status', 'purpose':'open_vent', 'data':'1'}
+            self.mq(self.qw24,Dict)                                 
+            Dict =  {'dest':'btn_status', 'purpose':'close_vent', 'data':'0'}
+            self.mq(self.qw24,Dict)                                     
+
+        
+    def get_pwm_state(self,m, rv = 0):
+        # get duty_cycle from pwm pins
+        if m == 1 or m == 5:
+            p1 = 9
+            p2 = 10
+            if m == 1:
+                p1 = kit._pca.channels[p1].duty_cycle
+                p2 = kit._pca.channels[p2].duty_cycle
+            elif m == 5:
+                p1 = p_kit._pca.channels[p1].duty_cycle
+                p2 = p_kit._pca.channels[p2].duty_cycle                
+        elif m == 2 or m == 6:
+            p1 = 11
+            p2 = 12
+            if m == 2:
+                p1 = kit._pca.channels[p1].duty_cycle
+                p2 = kit._pca.channels[p2].duty_cycle
+            elif m == 6:
+                p1 = p_kit._pca.channels[p1].duty_cycle
+                p2 = p_kit._pca.channels[p2].duty_cycle                            
+        elif m == 3 or m == 7:
+            p1 = 3
+            p2 = 4
+            if m == 3:
+                p1 = kit._pca.channels[p1].duty_cycle
+                p2 = kit._pca.channels[p2].duty_cycle
+            elif m == 7:
+                p1 = p_kit._pca.channels[p1].duty_cycle
+                p2 = p_kit._pca.channels[p2].duty_cycle                            
+        elif m == 4 or m == 8:
+            p1 = 5
+            p2 = 6        
+            if m == 4:
+                p1 = kit._pca.channels[p1].duty_cycle
+                p2 = kit._pca.channels[p2].duty_cycle
+            elif m == 8:
+                p1 = p_kit._pca.channels[p1].duty_cycle
+                p2 = p_kit._pca.channels[p2].duty_cycle                                           
+        else:
+            return(0)
+            
+        # determine pwm direction
+        if p1 == p2 == 0: # None
+            if rv != 0:
+                return 0
+            else:
+                return None
+        elif p1 > 0 and p2 > 0: # 0
+            return(0)
+        elif p1 == 0 and p2 > 0:
+            if rv != 0:
+                return 1
+            else:
+                return(-1)
+        elif p1 > 0 and p2 == 0:
+            return(1)            
+        
+    def print_duty(self):
+        None
+        #self.cprint("\n")
+        #print("m1 dir : %s\n"%self.get_pwm_state(1))
+        #print("m2 dir : %s\n"%self.get_pwm_state(2))        
+        #print("m3 dir : %s\n"%self.get_pwm_state(3))        
+        #print("m4 dir : %s\n"%self.get_pwm_state(4))        
+        #print("m5 dir : %s\n"%self.get_pwm_state(5))        
+        #print("m6 dir : %s\n"%self.get_pwm_state(6))        
+        #print("m7 dir : %s\n"%self.get_pwm_state(7))        
+        #print("m8 dir : %s\n"%self.get_pwm_state(8))        
+                
+    def update_adj_pos_display(self):
+        if abs(self.adj_pos - self.prev_adj_pos) > 50:
+            Dict = {'dest':'adj_pos_display', 'adj_pos':str(int(self.adj_pos))}
+            self.mq(self.qw15, Dict)
+            self.prev_adj_pos = self.adj_pos
+
+    def put_adj_pos_value(self):
+        #print("put adj pos value 2392")
+        self.mod_kpv_file_entry(198, self.adj_pos)
+            
+    def mq(self, q, val, block = False, timeout = 0.05): # verify queue transmission
+        if block == 1:
+            block = True
+        try:
+            self.q = q
+            try:
+                while self.q.full():
+                    self.q.get(block, timeout)
+            except:
+                None
+            else:
+                try:
+                    self.q.put(val, block, timeout)         
+                except:
+                    None
+        except:
+            None

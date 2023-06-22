@@ -1,0 +1,402 @@
+[0]   max_rdg_fail
+6.00
+[1]   pccu_count_time_mod
+5.00
+[2]   in_marker_time
+15.00
+[3]   in_stable_dbnd
+0.03
+[4]   in_stable_time
+5.00
+[5]   in_stable_time_pccu
+5.00
+[6]   in_stpt_divisions
+5.00
+[7]   in_stpt_cal_divisio
+3.00
+[8]   in_switch_stpt
+0.70
+[9]   in_switch_stpt_rough
+250.00
+[10]  in_rough_nosoak
+55.00
+[11]  in_switch_time
+4.00
+[12]  in_fine_dbnd
+0.80
+[13]     psi_marker_time
+15.00
+[14]     psi_stable_dbnd
+0.00
+[15]     psi_stable_time
+5.00
+[16]     psi_stpt_divisions
+5.00
+[17]     psi_stpt_cal_divisi
+3.00
+[18]     psi_switch_soak
+3000.00
+[19]     psi_rough_nosoak
+50.00
+[20]     psi_avg_pw_count
+5.00
+[21]     psi_manual_cycle_div
+5.00
+[22]     psi_cycle_reset_time_ST
+1.00
+[23]     psi_fine_sw_der
+0.10
+[24]  in_swap_soak
+2500.00
+[25]   s2 min pw
+1.00
+[26]   s2 max pw  (1000)
+300.00
+[27]   s2 Kp (3)
+1.00
+[28]   s2 Ki (6)
+1.00
+[29]   s2 Kd (0.2)
+0.05
+[30]   s2 max int (3)
+50.10
+[31]   s2 soak (300)
+200.00
+[32]   s2_intg_holdoff
+2.00
+[33]   s2_level_min
+0.70
+[34]   s2_level_max
+1.00
+[35]   adjuster_max_pos
+8000.00
+[36]   s2_up_spd
+0.55
+[37]   s2_down_spd
+-0.60
+[38]   adjuster_runout (16000)
+16000.00
+[39]   in_stable_der
+0.03
+[40]   adj_min_move_amp
+3500.00
+[41]   psi_switch_stpt_divisor
+1900.00
+[42]   psi_cycle_reset_time_LT
+4.00
+[43]   s2_up_spd_max
+0.60
+[44]   s2_down_spd_max
+-0.60
+[45]     m3 min pw (7.0)
+3.00
+[46]     m3 max pw
+10.00
+[47]     m3 Kp
+0.80
+[48]     m3 Ki
+0.05
+[49]     m3 Kd
+0.30
+[50]     m3 max int
+10.00
+[51]     m3 soak
+350.00
+[52]     psi_der_cycle_time
+3.00
+[53]     psi_fine_dbnd
+0.10
+[54]     psi_cycles_per_div 
+20.00
+[55]     psi_swap_soak
+2500.00
+[56]     m3_level
+1.00
+[57]     m2_level
+0.90
+[58]     s2_up_spd_min
+0.40
+[59]     s2_down_spd_min
+-0.40
+[60]   m4 min pw
+15.00
+[61]   m4 max pw 
+150.00
+[62]   m4 Kp
+2.00
+[63]   m4 Ki
+4.00
+[64]   m4 Kd
+0.20
+[65]   m4 max int
+10.00
+[66]   m4 soak
+300.00
+[67]   m4_intg_holdoff
+2.00
+[68]   m4_level_min
+0.80
+[69]   m4_level_max
+0.90
+[70]   m4_level_min
+0.70
+[71]   m4_level_max
+1.00
+[72]   m4_off_delay
+0.00
+[73]   NA
+0.00
+[74]   NA
+0.00
+[75]     m5 min pw
+10.00
+[76]     m5 max pw
+100.00
+[77]     NA
+0.00
+[78]     m3_manual_pw
+0.20
+[79]     NA
+0.00
+[80]     NA
+0.00
+[81]     NA
+0.00
+[82]     NA
+0.00
+[83]     NA
+0.00
+[84]     NA
+0.00
+[85]     m5_level_min
+0.70
+[86]     m5_level_max
+1.00
+[87]     NA
+0.00
+[88]     NA
+0.00
+[89]     NA
+0.00
+[90]     NA
+0.00
+[91]   m6 min pw 
+30.00
+[92]   m6 max pw
+100.00
+[93]   m6 Kp
+0.20
+[94]   m6 Ki
+0.30
+[95]   m6 Kd
+0.30
+[96]   NA
+0.00
+[97]   NA
+0.00
+[98]   NA
+0.00
+[99]   NA
+0.00
+[100]  NA
+0.00
+[101]  m6_level_min
+0.70
+[102]  m6_level_max
+1.00
+[103]  NA
+0.00
+[104]  NA
+0.00
+[105]  NA
+0.00
+[106]     NA
+0.00
+[107]     s1_move_min
+0.10
+[108]     s1_move_max
+15.00
+[109]     s1 Kp
+0.10
+[110]     s1 Ki
+0.05
+[111]     s1 Kd
+1.80
+[112]     s1 max int
+1.00
+[113]     s1 soak 
+500.00
+[114]     s1 min angle
+5.00
+[115]     s1 max angle 260
+225.00
+[116]     s1 pw holdoff
+240.00
+[117]     s1_intg_holdoff
+2.00
+[118]     s1 default angle
+220.00
+[119]     s1 initial angle
+200.00
+[120]     NA
+0.00
+[121]     NA
+0.00
+[122]     NA
+0.00
+[123]     NA
+0.00
+[124]     NA
+0.00
+[125]     NA
+0.00
+[126]     s1_up_dband
+0.50
+[127]     s1_down_dband
+1.20
+[128]     NA
+0.00
+[129]     NA
+0.00
+[130]     NA
+0.00
+[131]     NA
+0.00
+[132]     s1_manual_pw
+3.00
+[133]     NA
+0.00
+[134]     NA
+0.00
+[135]     NA
+0.00
+[136]     close_outlet_def_pw
+50.00
+[137]     co_der_array_size
+20.00
+[138]     co_soak_time
+250.00
+[139]     NA
+0.00
+[140]     NA
+0.00
+[141]     NA
+0.00
+[142]     NA
+0.00
+[143]   s0_manual_pw
+1.00
+[144]   s0_move_min
+0.00
+[145]   s0_move_max
+15.00
+[146]   s0 max angle movement_up
+2.00
+[147]   s0 Kp (0.03)
+0.15
+[148]   s0 Ki
+0.30
+[149]   s0 Kd
+2.50
+[150]   s0 max int
+1.00
+[151]   s0 soak 
+500.00
+[152]   s0 min angle
+5.00
+[153]   s0 max angle265
+258.00
+[154]   s0 pw holdoff
+200.00
+[155]   s0_intg_holdoff
+2.00
+[156]   s0 default angle
+250.00
+[157]   s0_init_angle
+240.00
+[158]   NA
+0.00
+[159]   NA
+0.00
+[160]   NA
+0.00
+[161]   NA
+0.00
+[162]   NA
+0.00
+[163]   NA
+0.00
+[164]   min_ma_record
+20.00
+[165]   NA
+0.00
+[166]   NA
+0.00
+[167]   adj_ma_arr_ST_up_size
+5.00
+[168]   NA
+0.00
+[169]   adj_ma_arr_ST_down_size
+5.00
+[170]   adj_ma_arr_LT_up_size
+100.00
+[171]   adj_ma_arr_LT_up_min_size
+20.00
+[172]   NA
+0.00
+[173]   adj_ma_arr_LT_down_min_size
+20.00
+[174]   adj_ma_arr_LT_down_size
+100.00
+[175]   NA
+0.00
+[176]   NA
+0.00
+[177]   adj_up_avg_max
+1200.00
+[178]   adj_down_avg_max
+1300.00
+[179]   NA
+0.00
+[180]   adj_up_outlier_stpt
+1400.00
+[181]   adj_down_outlier_stpt
+2000.00
+[182]   NA
+0.00
+[183]   NA
+0.00
+[184]   NA
+0.00
+[185]   adj_ma_up_inst_max
+4500.00
+[186]   adj_ma_down_inst_max
+4500.00
+[187]  NA
+0.00
+[188]  NA
+0.00
+[189]  read_in (70)
+93.00
+[190]  dp_high_stpt
+310.00
+[191]  sp_high_stpt
+1350.00
+[192]  psi_open_equalizer_stpt
+20.00
+[193]  max_poll_fail
+3.00
+[194]  NA
+0.00
+[195]  serial_baudrate
+4800.00
+[196]  NA
+0.00
+[197]  NA
+0.00
+[198]  totalizer
+136.16
+[199]  adj_ma_LT_up_avg
+284.00
+[200]  adj_ma_LT_down_avg
+766.00

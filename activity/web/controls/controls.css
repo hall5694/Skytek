@@ -1,0 +1,318 @@
+:root{ 
+  --br:0.0vh;
+  --fw:95vw;
+  --fh:99vh;
+  --mainpad:0%;
+    
+  --r1p-h:3;
+  --r1-h:calc((var(--r1p-h)/100)*var(--fh));  
+  --icon-h:calc(((var(--r1p-h) - (1/2))/100)*var(--fh));
+  --r1c1p-w:10;  
+  --r1c2p-w:30;
+  --r1c3p-w:var(--r1c2p-w);
+  --r1c4p-w:var(--r1c2p-w);  
+  
+  --r2p-h:10;
+  --r2c1p-w:10;
+  --r2c2p-w:30;
+  --r2c3p-w:var(--r2c2p-w);
+  --r2c4p-w:var(--r2c2p-w);
+  --r2-h:calc((var(--r2p-h)/100)*var(--fh));
+  
+  --r3p-h:10;
+  --r3-h:calc((var(--r3p-h)/100)*var(--fh));
+  
+  --r4p-h:4;
+  --r4-h:calc((var(--r4p-h)/100)*var(--fh));
+  --r4c1p-w:20; /* column */
+  --r4c1-w:calc(var(--fw) * (var(--r4c1p-w)/100));
+  --r4c2p-w:20; /* column */
+  --r4c2-w:calc(var(--fw) * (var(--r4c2p-w)/100));
+  --r4c3p-w:14; /* column */
+  --r4c3-w:calc(var(--fw) * (var(--r4c3p-w)/100));
+  --r4c4p-w:11; /* column */
+  --r4c4-w:calc(var(--fw) * (var(--r4c4p-w)/100));
+  --r4c5p-w:25; /* column */
+  --r4c5-w:calc(var(--fw) * (var(--r4c5p-w)/100));
+  --r4c6p-w:10; /* column */  
+  --r4c6-w:calc(var(--fw) * (var(--r4c6p-w)/100));
+    
+  --r5p-h:4;
+  --r5h:calc((var(--r5p-h)/100)*var(--fh));  
+  
+  --r6p:4;
+  --r6-h:calc((var(--r6p)/100)*var(--fh));  
+  
+  --r7p-h:15;
+  --r7-h:calc((var(--r7p-h)/100)*var(--fh));  
+  --r7c1p-w:65; /* message box percentage width */
+  --r7c2p-w:5; /* beam indicator percentage width */
+  --r7c3p-w:calc(100 - var(--r7c1p-w) + var(--r7c2p-w)); /* pid box percentage width */
+  
+  --r8p-h:50;
+  --r8-h:calc((var(--r8p-h)/100)*var(--fh));  
+  
+  --wp2:calc((18/90)*var(--fw));
+  --wp7p7:calc((12.857/90)*var(--fw));
+  --wp10:calc((9/90)*var(--fw));
+  
+  --wp35:calc((31.5/90)*var(--fw));
+  --hp1p3:calc((1.5/90)*var(--fh));
+  --hp2:calc((1.8/90)*var(--fh));
+  --fh1:calc((2/90)*var(--fh));
+  
+  --numbeamr:2; /* number of beam rows*/
+  --numbeamc:1; /* number of beam columns*/
+  --beamr-h:calc(var(--r7-h)/var(--numbeamr)); /* beam row height */
+  --beamr-w:calc(var(--fw) * (var(--r7c2p-w)/100)); /* beam row width */
+  --beamrp-h:calc(100/var(--numbeamr)); /* beam row percentage height*/  
+  
+  --numpidr:5; /* number of pid rows*/
+  --numpidc:4; /* number of pid columns*/
+  --pidr-h:calc(var(--r7-h)/var(--numpidr)); /* pid row height */
+  --pidr-w:calc(var(--fw) * (var(--r7c3p-w)/100)); /* pid row width */
+  --pidrp-h:calc(100/var(--numpidr)); /* pid row percentage height*/  
+  --pidc1p-w:13; /* pid row title percentage*/  
+  --pidc2p-w:29; /* pid column width percentage*/
+  
+  --numbtnr:8; /*number of button rows */
+  --numbtnc:7; /*number of button columns */
+  --btnh:calc(var(--r8-h)/var(--numbtnr)); /* button height */
+  --btnw:calc(var(--fw) / var(--numbtnc)); /* button width */
+  
+  --clr2:#eeefff;  
+  --clr3:#dddddd;  
+  --clr4:#D6E8F8;
+  --clr5:#cceeee;
+  --clr6:#000000;
+  --clr7:#626a6a;
+  --clr8:#82c9ff;
+  --clr9:#ffffff;
+  --clr10:#b3b3b3;
+  --clr11:#ddffff;
+  --clr12:#dfdfdf;
+  --clr13:#aaccee;
+  --clr14:#aaeeee;
+  --clr15:#bbddee;
+  --clr16:#eeffff;
+  --clr17:#00ff00;
+  --clr18:#D6E8F8;
+  
+  --vm:90vmin;
+  --vmin1p6:calc((1.5/90) * var(--fw));
+  --vmin2:calc((1.8/90) * var(--fw));
+  --vmin2p2:calc((2/90) * var(--fw));
+  --vmin4p4:calc((4/90) * var(--fw));
+  --vmin6p6:calc((6/90) * var(--fw));
+}
+.row_1{ 
+  display:flex; flex:var(--r1p-h) var(--r1p-h); width:var(--fw); flex-direction:row; flex-wrap:nowrap;
+  justify-content:center; align-items:center; align-content:center;
+  background-color:var(--clr6);
+}
+.row_2{ 
+  display:flex; flex:var(--r2p-h) var(--r2p-h); width:var(--fw); flex-direction:row; flex-wrap:nowrap;
+  justify-content:center; align-items:center; align-content:center; 
+  background-color:var(--clr6);
+}
+.row_3{ 
+  display:flex; flex:var(--r3p-h) var(--r3p-h); width:var(--fw); flex-direction:row; flex-wrap:nowrap;
+  justify-content:center; align-items:center; align-content:center; 
+  background-color:var(--clr6);       
+}
+.row_4{ 
+  display:flex; flex:var(--r4p-h) var(--r4p-h); width:var(--fw); flex-direction:row; flex-wrap:nowrap;
+  justify-content:center; align-items:center; align-content:center; 
+  background-color:var(--clr6);
+}
+.row_5{
+  display:flex; flex:var(--r5p-h) var(--r5p-h);  width:var(--fw); flex-direction:row; flex-wrap:nowrap;
+  justify-content:center; align-items:center; align-content:center;
+  background-color:var(--clr6);       
+}
+.row_6{ 
+  display:flex; flex:var(--r6p) var(--r6p); width:var(--fw); flex-direction:row; flex-wrap:nowrap;
+  justify-content:center; align-items:center; align-content:center;
+  background-color:var(--clr6);
+}
+.row_7{ 
+  display:flex; flex:var(--r7p-h) var(--r7p-h); width:var(--fw); flex-direction:row; flex-wrap:nowrap;
+  justify-content:center; align-items:center; align-content:center;
+  background-color:var(--clr5);
+}
+.row_8{ 
+  display:flex; flex:var(--r8p-h) var(--r8p-h); width:var(--fw); flex-direction:column; flex-wrap:nowrap;
+  justify-content:center; align-items:center; align-content:center;
+  background-color:var(--clr4);
+}
+.title{       
+  display:flex; flex:var(--r1c2p-w) var(--r1c2p-w); height:var(--r1-h); font-size:var(--fh1);
+  background-color:var(--clr2); margin:0px; justify-content:center;
+  align-items:center; align-content:center;
+}
+.settings_container{       
+  display:flex; flex-direction:row;flex:var(--r1c1p-w) var(--r1c1p-w); height:var(--r1-h);
+  background-color:var(--clr2); margin:0px;justify-content:center;align-content:center;align-items:center;
+}
+.settings_icon{       
+  flex:0 1; height:var(--icon-h);justify-content:center;align-content:center;align-items:center;
+  background-color:var(--clr2); margin:0px;
+}
+.title_hidden{
+  display:flex; flex:var(--r1c1p-w) var(--r1c1p-w); height:var(--r1-h); font-size:var(--fh1);
+  background-color:var(--clr2); margin:0px;border-width:1px;border-style:solid;
+}
+.units{ 
+  display:flex; flex:var(--r2c1p-w) var(--r2c1p-w); height:var(--r2-h); justify-content:center;
+  font-size:var(--vmin4p4); background-color:var(--clr16); margin:0; 
+  align-items:center; align-content:center; font-family:Monospace;
+}
+.rdg{     
+  display:flex; flex:var(--r2c2p-w) var(--r2c2p-w); height:var(--r2-h); justify-content:center; 
+  font-size:var(--vmin6p6); background-color:var(--clr16); margin:0;
+  align-items:center; align-content:center; font-family:Monospace;
+}
+.rdg_disabled{ 
+  display:flex; flex:var(--r2c4p-w) var(--r2c4p-w); height:var(--r2-h); justify-content:center;
+  background-color:var(--clr7); margin:0;
+}
+.column_1{ 
+  display:flex; flex:var(--r4c1p-w) var(--r4c1p-w); height:var(--r4-h); justify-content:center;
+  margin:0px; color:var(--clr6); background-color:var(--clr2); font-size:var(--vmin2p2);
+  align-items:center; 
+}
+.column_2{
+  display:flex; flex:var(--r4c2p-w) var(--r4c2p-w); height:var(--r4-h); justify-content:center;
+  margin:0px; color:var(--clr6); background-color:var(--clr2); font-size:var(--vmin2p2);
+  align-items:center;
+}
+.column_3{ 
+  display:flex; flex:var(--r4c3p-w) var(--r4c3p-w);  height:var(--r4-h); justify-content:center;
+  margin:0px; color:var(--clr6); background-color:var(--clr2); font-size:var(--vmin2p2);
+  align-items:center;
+}
+.column_4{ 
+  display:flex; flex:var(--r4c4p-w) var(--r4c4p-w);  height:var(--r4-h); justify-content:center;
+  margin:0px; color:var(--clr6); background-color:var(--clr2); font-size:var(--vmin2p2);
+  align-items:center;
+}
+.column_5{ 
+  display:flex; flex:var(--r4c5p-w) var(--r4c5p-w); height:var(--r4-h); justify-content:center;
+  margin:0px; color:var(--clr6); background-color:var(--clr2); font-size:var(--vmin2p2);
+  align-items:center;
+}
+.column_6{ 
+  display:flex; flex:var(--r4c6p-w) var(--r4c6p-w); height:var(--r4-h); justify-content:center;
+  margin:0px; color:var(--clr6); background-color:var(--clr2); font-size:var(--vmin2p2);
+  align-items:center; 
+}
+.message{ 
+  display:flex; flex-direction:column; flex:var(--r7c1p-w) var(--r7c1p-w); font-size:var(--vmin1p6); 
+  text-align:left; color:var(--clr6); height:var(--r7-h); font-size:var(--vmin2p2); 
+  background-color:var(--clr5); overflow:auto; 
+}
+.beam_table{
+  display:flex; flex-direction:column; flex:var(--r7c2p-w) var(--r7c2p-w); justify-content:center;
+  align-items:center; align-content:center; color: var(--clr6); height:var(--r7-h);
+  background-color:var(--clr6);  /*margin:1.5%;*/
+}
+.beam_row{
+  display:flex; flex-direction:row; flex:var(--beamrp-h) var(--bea,rp-h); justify-content:center;
+  align-items:center; align-content:center; width:var(--beamr-w);
+  text-align:center; color:var(--clr12);
+  background-color:var(--clr11); font-size:var(--hp1p3); 
+}
+.beam_col{ 
+  display:flex; flex-direction:row; flex:var(--pidc2p-w) var(--pidc2p-w); justify-content:center;
+  align-items:center; align-content:center; height:var(--beamr-h);
+  text-align:center; color:var(--clr6); background-color:var(--clr14); 
+  border-width:0px; border-color:var(--clr6); border-style:solid;
+}
+.beam_circle{
+  width:20px; height:20px;background-color:var(--clr17); border-width:0.1px; border-style:solid;
+  border-radius: 50%; display:inline-block;
+}
+.pid_table{ 
+  display:flex; flex-direction:column; flex:var(--r7c3p-w) var(--r7c3p-w); justify-content:center;
+  align-items:center; align-content:center; color: var(--clr6); height:var(--r7-h);
+  background-color:var(--clr6);  /*margin:1.5%;*/
+}
+.pid_row{ 
+  display:flex; flex-direction:row; flex:var(--pidrp-h) var(--pidrp-h); justify-content:center;
+  align-items:center; align-content:center; width:var(--pidr-w);
+  text-align:center; color:var(--clr12);
+  background-color:var(--clr11); font-size:var(--hp1p3); 
+}
+.pid_row_title{ 
+  display:flex; flex-direction:row; flex:var(--pidc1p-w) var(--pidc1p-w); justify-content:center;
+  align-items:center; align-content:center; height:var(--pidr-h);
+  text-align:center; color:var(--clr6); 
+  background-color:var(--clr13); 
+  border-width:0.5px; border-color:var(--clr6); border-style:solid; 
+}
+.pid_col{ 
+  display:flex; flex-direction:row; flex:var(--pidc2p-w) var(--pidc2p-w); justify-content:center;
+  align-items:center; align-content:center; height:var(--pidr-h);
+  text-align:center; color:var(--clr6); background-color:var(--clr14); 
+  border-width:0.5px; border-color:var(--clr6); border-style:solid;
+}
+.pid_col_title{
+  display:flex; flex-direction:row; flex:var(--pidc2p-w) var(--pidc2p-w); justify-content:center;
+  align-items:center; align-content:center; height:var(--pidr-h);
+  text-align:center; color:var(--clr6); background-color:var(--clr13); 
+  border-width:0.5px; border-color:var(--clr6); border-style:solid;
+}
+.pid_col_hidden{ 
+  display:flex; flex-direction:row; flex:var(--pidc2p-w) var(--pidc2p-w); justify-content:center;
+  align-items:center; align-content:center; height:var(--pidr-h);
+  text-align:center; color:var(--clr6); background-color:var(--clr15); 
+  border-width:0.5px; border-color:var(--clr6); border-style:solid;
+}
+.input_c2{ 
+  display:flex; flex:1 1; width:var(--r4c2-w); height:var(--r4-h);
+  justify-content:center; text-align:center; font-size:var(--vmin2p2);
+  background-color:var(--clr2); border:none;
+}
+.input_c6{ 
+  display:flex; flex:1 1; width:var(--r4c6-w); height:var(--r4-h);
+  justify-content:center; text-align:center; font-size:var(--vmin2p2);
+  background-color:var(--clr2); border:none;
+}
+.button_row{ 
+  display:flex; flex:0 0 var(--btnh); width:var(--fw); flex-direction:row; 
+  flex-wrap:nowrap; justify-content:center; align-items:center;
+  align-content:center;
+}
+.buttn{ 
+  display:flex; flex:0 0 var(--btnw); height:var(--btnh); flex-direction:row; 
+  justify-content:center; align-items:center; align-content:center; 
+}
+button{ 
+  display:flex; flex:0 0 var(--btnw); flex-direction:row; justify-content:center;
+  align-items:center; align-content:center; flex-wrap:wrap; height:var(--btnh);
+  background-color:var(--clr4); font-size:var(--vmin2);
+}
+button_hidden{ 
+  display:flex; flex:0 0 var(--btnw);  flex-direction:row; justify-content:center;
+  align-items:center; align-content:center; flex-wrap:wrap; height:var(--btnh);
+  background-color:var(--clr7); font-size:var(--vmin2);
+}
+button:disabled{ 
+  background-color:var(--clr7); color:var(--clr10);
+}
+.flex-main{
+  display:flex; height:var(--fh); width:var(--fw); flex-direction:column;  flex-wrap:nowrap; 
+  justify-content:center; align-items:center; align-content:center; 
+  background-color:var(--clr6);
+}
+body{ 
+  display:flex; flex-direction:row; justify-content:center; background-color:var(--clr6);
+  align-items:center; align-content:center; 
+}
+.vmain{
+  display:flex; flex-direction:column; justify-content:flex-end; align-items:center;
+  align-content:center; padding:var(--mainpad);
+}
+main{ 
+  background-color:var(--clr6);
+}

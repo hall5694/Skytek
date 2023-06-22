@@ -1,0 +1,47 @@
+:root{
+  --border-radius:5px;
+  --valp-w:22;
+  --indxp-w:18;
+  --desp-w:60;
+}
+body { background-color:#222222; font-size:10px;
+}
+.flex-main { display:flex; 
+         flex-direction:column; justify-content:space-between; align-items:center; align-content:center;
+}
+.section { display:flex; flex-direction:column; flex:1 1; flex-wrap:nowrap; 
+           justify-content:flex-start; 
+           background-color:#fffffa;
+}
+.kpv_row { display:flex; flex-direction:row; flex-wrap:nowrap; 
+           justify-content:space-between; align-items:stretch; align-content:stretch;
+           margin:2px; padding:0px;
+           background-color:#ddfffe;
+           border-top-left-radius:var(--border-radius);
+           border-bottom-left-radius:var(--border-radius); 
+           border-top-right-radius:var(--border-radius);
+           border-bottom-right-radius:var(--border-radius);    
+}
+.val { display:flex; flex:var(--valp-w) var(--valp-w); 
+       background-color:#ddddfe;padding:0px;
+       border-top-left-radius:var(--border-radius); 
+       border-bottom-left-radius:var(--border-radius);  
+}
+.number_input{ color:#eeeeee;
+               text-align:center; background-color:#faaafa;
+}
+.index { display:flex; flex-direction:column; justify-content:center; align-items:center; align-content:stretch;
+       color:#000000; text-align:center; padding-left:2px; padding-right:2px;
+       background-color:#ddcbfd; text-align:left; 
+       font:calibri;
+}
+.des {  display:flex; flex-direction:column; justify-content:center; align-items:center; align-content:stretch;flex:var(--desp-w) var(--desp-w); 
+       color:#000000; padding-left:5px; padding-right:5px;
+       background-color:#ddfffe; text-align:center; 
+       font:calibri; 
+       border-top-right-radius:var(--border-radius); font-family:sans-serif;
+       border-bottom-right-radius:var(--border-radius); font-weight:bold;
+}
+input{
+  width:40px; 
+}

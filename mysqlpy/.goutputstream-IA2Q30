@@ -1,0 +1,23 @@
+import sys, torndb, MySQLdb
+
+class Mysql_process(multiprocessing.Process):
+    def __init__(self, qd1, qd2):
+        multiprocessing.Process.__init__(self)
+        self.qd1 = qd1 # write to db
+        self.qd2 = qd2 # read from db
+        
+    def get_kpv_new_file():
+        db = torndb.Connection('localhost','skytek',user='admin',password='5Am5on45!')
+        kpv_vals_list = []
+        user = 'default_user'
+        #db.execute("update kpv set `" + str(i) + "` = '" + str(kpv_vals_list[i]) + "' where user = '" + str(user) + ";")
+
+def run(self):
+    #self.cprint("mysql.py running")
+    while True:
+        if not self.qd1.empty(): # write to db
+            data = self.qd1.get()
+        if not self.qd2.empty(): # read from db
+            data = self.qd2.get()
+        time.sleep(0.05)
+
